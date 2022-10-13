@@ -7,11 +7,19 @@
 module mod_initflow
   use mpi
   use mod_common_mpi, only: ierr,myid
+#if defined(_HEAT_TRANSFER)
+  use mod_param     , only: pi,dx,dy,dz,lx,ly,lz,uref,lref,is_wallturb,bforce,tg0
+#else
   use mod_param     , only: pi,dx,dy,dz,lx,ly,lz,uref,lref,is_wallturb,bforce
+#endif
   use mod_types
   implicit none
   private
-  public initflow,add_noise
+  public initflow, &
+#if defined(_HEAT_TRANSFER)
+         inittmp, &
+#endif
+         add_noise
   contains
   subroutine initflow(inivel,ng,lo,zclzi,dzclzi,dzflzi,visc,u,v,w,p)
     !
@@ -190,6 +198,42 @@ module mod_initflow
     end if
     deallocate(u1d)
   end subroutine initflow
+  !
+#if defined(_HEAT_TRANSFER)
+  subroutine inittmp(initmp,nx,ny,nz,tmp)
+    !
+    ! computes initial conditions for the temperature field
+    !
+    implicit none
+    !
+    character(len=3), intent(in )                                     :: initmp
+    integer         , intent(in )                                     :: nx,ny,nz
+    real(rp)        , intent(out), dimension(0:,0:,0:) :: tmp
+    !
+    integer :: i,j,k
+    !
+    select case(initmp)
+    case('uni')
+      do k=1,nz
+        do j=1,ny
+          do i=1,nx
+            tmp(i,j,k) = tg0
+          enddo
+        enddo
+      enddo
+      !
+    case default
+      if(myid.eq.0) print*, 'ERROR: invalid name for initial temperature field'
+      if(myid.eq.0) print*, ''
+      if(myid.eq.0) print*, '****** Simulation aborted due to errors in input file ******'
+      if(myid.eq.0) print*, '       check heat_transfer.in'
+      call MPI_FINALIZE(ierr)
+      call exit
+    end select
+    !
+    return
+  end subroutine inittmp
+#endif
   !
   subroutine add_noise(ng,lo,iseed,norm,p)
     implicit none

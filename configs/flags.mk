@@ -7,7 +7,7 @@ endif
 ifeq ($(strip $(FCOMP)),NVIDIA)
 FFLAGS_MOD_DIR := -module
 ifeq ($(strip $(GPU)),1)
-override FFLAGS += -acc -cuda -Minfo=accel -gpu=cc60,cc70,cc80
+override FFLAGS += -acc -cuda -Minfo=accel -gpu=cuda11.4,cc86
 endif
 endif
 ifeq ($(strip $(FCOMP)),CRAY)
@@ -23,7 +23,7 @@ ifeq ($(strip $(FCOMP)),INTEL)
 override FFLAGS += -O0 -g -traceback -fpe0 -stand f18
 endif
 ifeq ($(strip $(FCOMP)),NVIDIA)
-override FFLAGS += -O0 -g -traceback -Mstandard -Minform=inform -Mbackslash -Mbounds -Mchkstk
+override FFLAGS += -O0 -g -traceback -Ktrap=fp -Mstandard -Minform=inform -Mbackslash -Mbounds -Mchkstk
 endif
 ifeq ($(strip $(FCOMP)),CRAY)
 override FFLAGS += -g -G0
@@ -40,7 +40,7 @@ ifeq ($(strip $(FCOMP)),INTEL)
 override FFLAGS += -O0 -warn all -g -traceback -fpe0 -stand f18
 endif
 ifeq ($(strip $(FCOMP)),NVIDIA)
-override FFLAGS += -O0 -g -traceback -Mstandard -Minform=inform -Mbackslash -Mbounds -Mchkptr -Mchkstk
+override FFLAGS += -O0 -g -traceback -Ktrap=fp -Mstandard -Minform=inform -Mbackslash -Mbounds -Mchkptr -Mchkstk
 endif
 ifeq ($(strip $(FCOMP)),CRAY)
 override FFLAGS += -g -G0
@@ -54,10 +54,10 @@ ifeq ($(strip $(FCOMP)),GNU)
 override FFLAGS += -O3
 endif
 ifeq ($(strip $(FCOMP)),INTEL)
-override FFLAGS += -O3
+override FFLAGS += -O3 -xHost
 endif
 ifeq ($(strip $(FCOMP)),NVIDIA)
-override FFLAGS += -O3 -fast
+override FFLAGS += -fast
 endif
 ifeq ($(strip $(FCOMP)),CRAY)
 override FFLAGS += -O3
@@ -104,15 +104,18 @@ DEFINES += -D_DECOMP_Y
 else ifeq ($(strip $(DECOMP_Z)),1)
 DEFINES += -D_DECOMP_Z
 endif
+ifeq ($(strip $(VOLUME)),0)
 ifeq      ($(strip $(PENCIL_AXIS)),1)
 DEFINES += -D_DECOMP_X
 else ifeq ($(strip $(PENCIL_AXIS)),2)
 DEFINES += -D_DECOMP_Y
-else ifeq ($(strip $(PENCIL_AXIS)),3)
+endif
+endif
+ifeq ($(strip $(PENCIL_AXIS)),3)
 DEFINES += -D_DECOMP_Z
 endif
 ifeq ($(strip $(SINGLE_PRECISION)),1)
-DEFINES += -D_SINGLE_PRECISION
+DEFINES += -D_SINGLE_PRECISION -D_MASK_DIVERGENCE_CHECK
 endif
 ifeq ($(strip $(SINGLE_PRECISION_POISSON)),1)
 DEFINES += -D_SINGLE_PRECISION_POISSON
@@ -131,6 +134,41 @@ DEFINES += -D_GRIDPOINT_NATURAL_CHANNEL
 endif
 ifeq ($(strip $(MASK_DIVERGENCE_CHECK)),1)
 DEFINES += -D_MASK_DIVERGENCE_CHECK
+endif
+
+ifeq ($(strip $(GPU)),1)
+DEFINES += -D_GPU
+endif
+ifeq ($(strip $(IBM)),1)
+DEFINES += -D_IBM
+endif
+ifeq ($(strip $(SIMPLE)),1)
+DEFINES += -D_SIMPLE
+endif
+ifeq ($(strip $(VOLUME)),1)
+DEFINES += -D_VOLUME
+DEFINES += -D_DECOMP_Z
+endif
+ifeq ($(strip $(IBM_BC)),1)
+DEFINES += -D_IBM_BC
+endif
+ifeq ($(strip $(FORCE_FLUID_ONLY)),1)
+DEFINES += -D_FORCE_FLUID_ONLY
+endif
+ifeq ($(strip $(HEAT_TRANSFER)),1)
+DEFINES += -D_HEAT_TRANSFER
+endif
+ifeq ($(strip $(BOUSSINESQ)),1)
+DEFINES += -D_BOUSSINESQ
+endif
+ifeq ($(strip $(ISOTHERMAL)),1)
+DEFINES += -D_ISOTHERMAL
+endif
+ifeq ($(strip $(LPP_GPU)),1)
+DEFINES += -D_ISOTHERMAL
+endif
+ifeq ($(strip $(LPP_CPU)),1)
+DEFINES += -D_ISOTHERMAL
 endif
 
 ifeq ($(strip $(OPENMP)),1)

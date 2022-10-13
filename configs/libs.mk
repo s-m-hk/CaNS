@@ -7,8 +7,17 @@ override INCS += -I$(LIBS_DIR)/cuDecomp/build/include
 endif
 
 ifeq ($(strip $(USE_NVTX)),1)
-NVHPC_HOME ?= /opt/nvidia/hpc_sdk/Linux_x86_64/2022
-override LIBS += -L$(NVHPC_HOME)/cuda/lib64 -lnvToolsExt
+override LIBS += -L$(NVHPC_ROOT)/cuda/lib64 -lnvToolsExt
+endif
+
+ifeq ($(strip $(FCOMP)),GNU)
+override LIBS += -L/lscratch/smhk2/Software/AMD/amd-fftw/lib
+endif
+ifeq ($(strip $(FCOMP)),INTEL)
+override LIBS += -L/scratch/smhk2/Software/fftw-intel/lib
+endif
+ifeq ($(strip $(FCOMP)),NVIDIA)
+override LIBS += -L/lscratch/smhk2/Software/AMD/amd-fftw/lib
 endif
 
 ifneq ($(strip $(GPU)),1)
@@ -33,3 +42,5 @@ endif
 endif
 
 endif
+
+LIBS += -lm -ldl

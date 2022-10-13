@@ -20,12 +20,19 @@ module mod_mom
   public mom_xyz_ad
   contains
   !
-  subroutine momx_a(nx,ny,nz,dxi,dyi,dzfi,u,v,w,dudt)
+  subroutine momx_a(nx,ny,nz,dxi,dyi,dzfi,u,v,w, &
+#if defined(_IBM)
+                    psi_u,psi_v,psi_w, &
+#endif
+                    dudt)
     implicit none
     integer , intent(in) :: nx,ny,nz
     real(rp), intent(in) :: dxi,dyi
     real(rp), intent(in), dimension(0:) :: dzfi
     real(rp), dimension(0:,0:,0:), intent(in   ) :: u,v,w
+#if defined(_IBM)
+    real(rp), dimension(0:,0:,0:), intent(in   ) :: psi_u,psi_v,psi_w
+#endif
     real(rp), dimension( :, :, :), intent(inout) :: dudt
     integer :: i,j,k
     real(rp) :: uuip,uuim,uvjp,uvjm,uwkp,uwkm
@@ -33,7 +40,7 @@ module mod_mom
     !$acc parallel loop collapse(3) default(present) private(uuip,uuim,uvjp,uvjm,uwkp,uwkm) async(1)
     !$OMP PARALLEL DO DEFAULT(none) &
     !$OMP PRIVATE(uuip,uuim,uvjp,uvjm,uwkp,uwkm) &
-    !$OMP SHARED(nx,ny,nz,dxi,dyi,u,v,w,dudt,dzfi)
+    !$OMP SHARED(nx,ny,nz,dxi,dyi,u,v,w,psi_u,psi_v,psi_w,dudt,dzfi)
     do k=1,nz
       do j=1,ny
         do i=1,nx
@@ -43,6 +50,14 @@ module mod_mom
           uvjm  = 0.25*( u(i,j-1,k)+u(i,j,k) )*( v(i+1,j-1,k  )+v(i,j-1,k  ) )
           uwkp  = 0.25*( u(i,j,k+1)+u(i,j,k) )*( w(i+1,j  ,k  )+w(i,j  ,k  ) )
           uwkm  = 0.25*( u(i,j,k-1)+u(i,j,k) )*( w(i+1,j  ,k-1)+w(i,j  ,k-1) )
+#if defined(_IBM) && defined(_SIMPLE)
+          if (psi_u(i,j,k) == 0.) then ! if not in solid
+            if (psi_u(i,j+1,k) == 1.) uvjp  = 0._rp
+            if (psi_u(i,j-1,k) == 1.) uvjm  = 0._rp
+            if (psi_u(i,j,k+1) == 1.) uwkp  = 0._rp
+            if (psi_u(i,j,k-1) == 1.) uwkm  = 0._rp
+          endif
+#endif
           !
           ! Momentum balance
           !
@@ -55,12 +70,19 @@ module mod_mom
     end do
   end subroutine momx_a
   !
-  subroutine momy_a(nx,ny,nz,dxi,dyi,dzfi,u,v,w,dvdt)
+  subroutine momy_a(nx,ny,nz,dxi,dyi,dzfi,u,v,w, &
+#if defined(_IBM)
+                    psi_u,psi_v,psi_w, &
+#endif
+                    dvdt)
     implicit none
     integer , intent(in) :: nx,ny,nz
     real(rp), intent(in) :: dxi,dyi
     real(rp), intent(in), dimension(0:) :: dzfi
     real(rp), dimension(0:,0:,0:), intent(in   ) :: u,v,w
+#if defined(_IBM)
+    real(rp), dimension(0:,0:,0:), intent(in   ) :: psi_u,psi_v,psi_w
+#endif
     real(rp), dimension( :, :, :), intent(inout) :: dvdt
     integer :: i,j,k
     real(rp) :: uvip,uvim,vvjp,vvjm,wvkp,wvkm
@@ -68,7 +90,7 @@ module mod_mom
     !$acc parallel loop collapse(3) default(present) private(uvip,uvim,vvjp,vvjm,wvkp,wvkm) async(1)
     !$OMP PARALLEL DO DEFAULT(none) &
     !$OMP PRIVATE(uvip,uvim,vvjp,vvjm,wvkp,wvkm) &
-    !$OMP SHARED(nx,ny,nz,dxi,dyi,dzfi,u,v,w,dvdt)
+    !$OMP SHARED(nx,ny,nz,dxi,dyi,dzfi,u,v,w,psi_u,psi_v,psi_w,dvdt)
     do k=1,nz
       do j=1,ny
         do i=1,nx
@@ -78,6 +100,14 @@ module mod_mom
           vvjm  = 0.25*( v(i  ,j,k  )+v(i  ,j-1,k  ) )*( v(i,j,k)+v(i,j-1,k) )
           wvkp  = 0.25*( w(i  ,j,k  )+w(i  ,j+1,k  ) )*( v(i,j,k+1)+v(i,j,k) )
           wvkm  = 0.25*( w(i  ,j,k-1)+w(i  ,j+1,k-1) )*( v(i,j,k-1)+v(i,j,k) )
+#if defined(_IBM) && defined(_SIMPLE)
+          if (psi_v(i,j,k) == 0.) then ! if not in solid
+            if (psi_v(i+1,j,k) == 1.) uvip = 0._rp
+            if (psi_v(i-1,j,k) == 1.) uvim = 0._rp
+            if (psi_v(i,j,k+1) == 1.) wvkp = 0._rp
+            if (psi_v(i,j,k-1) == 1.) wvkm = 0._rp
+          endif
+#endif
           !
           ! Momentum balance
           !
@@ -90,12 +120,19 @@ module mod_mom
     end do
   end subroutine momy_a
   !
-  subroutine momz_a(nx,ny,nz,dxi,dyi,dzci,u,v,w,dwdt)
+  subroutine momz_a(nx,ny,nz,dxi,dyi,dzci,u,v,w, &
+#if defined(_IBM)
+                    psi_u,psi_v,psi_w, &
+#endif
+                    dwdt)
     implicit none
     integer , intent(in) :: nx,ny,nz
     real(rp), intent(in) :: dxi,dyi
     real(rp), intent(in), dimension(0:) :: dzci
     real(rp), dimension(0:,0:,0:), intent(in   ) :: u,v,w
+#if defined(_IBM)
+    real(rp), dimension(0:,0:,0:), intent(in   ) :: psi_u,psi_v,psi_w
+#endif
     real(rp), dimension( :, :, :), intent(inout) :: dwdt
     integer :: i,j,k
     real(rp) :: uwip,uwim,vwjp,vwjm,wwkp,wwkm
@@ -103,7 +140,7 @@ module mod_mom
     !$acc parallel loop collapse(3) default(present) private(uwip,uwim,vwjp,vwjm,wwkp,wwkm) async(1)
     !$OMP PARALLEL DO DEFAULT(none) &
     !$OMP PRIVATE(uwip,uwim,vwjp,vwjm,wwkp,wwkm) &
-    !$OMP SHARED(nx,ny,nz,dxi,dyi,dzci,u,v,w,dwdt)
+    !$OMP SHARED(nx,ny,nz,dxi,dyi,dzci,u,v,w,psi_u,psi_v,psi_w,dwdt)
     do k=1,nz
       do j=1,ny
         do i=1,nx
@@ -113,6 +150,14 @@ module mod_mom
           vwjm  = 0.25*( w(i,j,k)+w(i,j-1,k) )*( v(i  ,j-1,k)+v(i  ,j-1,k+1) )
           wwkp  = 0.25*( w(i,j,k)+w(i,j,k+1) )*( w(i  ,j  ,k)+w(i  ,j  ,k+1) )
           wwkm  = 0.25*( w(i,j,k)+w(i,j,k-1) )*( w(i  ,j  ,k)+w(i  ,j  ,k-1) )
+#if defined(_IBM) && defined(_SIMPLE)
+          if (psi_w(i,j,k) == 0.) then ! if not in solid
+           if (psi_w(i+1,j,k) == 1.) uwip = 0._rp
+           if (psi_w(i-1,j,k) == 1.) uwim = 0._rp
+           if (psi_w(i,j+1,k) == 1.) vwjp = 0._rp
+           if (psi_w(i,j-1,k) == 1.) vwjm = 0._rp
+          endif
+#endif
           !
           ! Momentum balance
           !
@@ -125,20 +170,27 @@ module mod_mom
     end do
   end subroutine momz_a
   !
-  subroutine momx_d(nx,ny,nz,dxi,dyi,dzci,dzfi,visc,u,dudt)
+  subroutine momx_d(nx,ny,nz,dxi,dyi,dzci,dzfi,visc,u, &
+#if defined(_IBM)
+                    psi_u,psi_v,psi_w, &
+#endif
+                    dudt)
     implicit none
     integer , intent(in) :: nx,ny,nz
     real(rp), intent(in) :: dxi,dyi,visc
     real(rp), intent(in), dimension(0:) :: dzci,dzfi
     real(rp), dimension(0:,0:,0:), intent(in   ) :: u
+#if defined(_IBM)
+    real(rp), dimension(0:,0:,0:), intent(in   ) :: psi_u,psi_v,psi_w
+#endif
     real(rp), dimension( :, :, :), intent(inout) :: dudt
     real(rp) :: dudxp,dudxm,dudyp,dudym,dudzp,dudzm
     integer :: i,j,k
     !
+    !$acc parallel loop collapse(3) default(present) private(dudxp,dudxm,dudyp,dudym,dudzp,dudzm) async(1)
     !$OMP PARALLEL DO DEFAULT(none) &
     !$OMP PRIVATE(dudxp,dudxm,dudyp,dudym,dudzp,dudzm) &
-    !$OMP SHARED(nx,ny,nz,dxi,dyi,dzci,dzfi,u,dudt,visc)
-    !$acc parallel loop collapse(3) default(present) private(dudxp,dudxm,dudyp,dudym,dudzp,dudzm) async(1)
+    !$OMP SHARED(nx,ny,nz,dxi,dyi,dzci,dzfi,u,psi_u,psi_v,psi_w,dudt,visc)
     do k=1,nz
       do j=1,ny
         do i=1,nx
@@ -148,6 +200,14 @@ module mod_mom
           dudym = (u(i,j,k)-u(i,j-1,k))*dyi
           dudzp = (u(i,j,k+1)-u(i,j,k))*dzci(k  )
           dudzm = (u(i,j,k)-u(i,j,k-1))*dzci(k-1)
+#if defined(_IBM) && defined(_SIMPLE)
+          if (psi_u(i,j,k) == 0.) then ! if not in solid
+            if (psi_u(i,j+1,k) == 1.) dudyp = -2._rp*u(i,j,k)*dyi
+            if (psi_u(i,j-1,k) == 1.) dudym =  2._rp*u(i,j,k)*dyi
+            if (psi_u(i,j,k+1) == 1.) dudzp = -2._rp*u(i,j,k)*dzci(k)
+            if (psi_u(i,j,k-1) == 1.) dudzm =  2._rp*u(i,j,k)*dzci(k)
+          endif
+#endif
           dudt(i,j,k) = dudt(i,j,k) + &
                         (dudxp-dudxm)*visc*dxi + &
                         (dudyp-dudym)*visc*dyi + &
@@ -157,12 +217,19 @@ module mod_mom
     end do
   end subroutine momx_d
   !
-  subroutine momy_d(nx,ny,nz,dxi,dyi,dzci,dzfi,visc,v,dvdt)
+  subroutine momy_d(nx,ny,nz,dxi,dyi,dzci,dzfi,visc,v, &
+#if defined(_IBM)
+                    psi_u,psi_v,psi_w, &
+#endif
+                    dvdt)
     implicit none
     integer , intent(in) :: nx,ny,nz
     real(rp), intent(in) :: dxi,dyi,visc
     real(rp), intent(in), dimension(0:) :: dzci,dzfi
     real(rp), dimension(0:,0:,0:), intent(in   ) :: v
+#if defined(_IBM)
+    real(rp), dimension(0:,0:,0:), intent(in   ) :: psi_u,psi_v,psi_w
+#endif
     real(rp), dimension( :, :, :), intent(inout) :: dvdt
     real(rp) :: dvdxp,dvdxm,dvdyp,dvdym,dvdzp,dvdzm
     integer :: i,j,k
@@ -170,7 +237,7 @@ module mod_mom
     !$acc parallel loop collapse(3) default(present) private(dvdxp,dvdxm,dvdyp,dvdym,dvdzp,dvdzm) async(1)
     !$OMP PARALLEL DO DEFAULT(none) &
     !$OMP PRIVATE(dvdxp,dvdxm,dvdyp,dvdym,dvdzp,dvdzm) &
-    !$OMP SHARED(nx,ny,nz,dxi,dyi,dzci,dzfi,v,dvdt,visc)
+    !$OMP SHARED(nx,ny,nz,dxi,dyi,dzci,dzfi,v,psi_u,psi_v,psi_w,dvdt,visc)
     do k=1,nz
       do j=1,ny
         do i=1,nx
@@ -180,6 +247,14 @@ module mod_mom
           dvdym = (v(i,j,k)-v(i,j-1,k))*dyi
           dvdzp = (v(i,j,k+1)-v(i,j,k))*dzci(k  )
           dvdzm = (v(i,j,k)-v(i,j,k-1))*dzci(k-1)
+#if defined(_IBM) && defined(_SIMPLE)
+          if (psi_v(i,j,k) == 0.) then ! if not in solid
+            if (psi_v(i+1,j,k) == 1.) dvdxp = -2._rp*v(i,j,k)*dxi
+            if (psi_v(i-1,j,k) == 1.) dvdxm =  2._rp*v(i,j,k)*dxi
+            if (psi_v(i,j,k+1) == 1.) dvdzp = -2._rp*v(i,j,k)*dzci(k)
+            if (psi_v(i,j,k-1) == 1.) dvdzm =  2._rp*v(i,j,k)*dzci(k)
+          endif
+#endif
           dvdt(i,j,k) = dvdt(i,j,k) + &
                         (dvdxp-dvdxm)*visc*dxi + &
                         (dvdyp-dvdym)*visc*dyi + &
@@ -189,12 +264,19 @@ module mod_mom
     end do
   end subroutine momy_d
   !
-  subroutine momz_d(nx,ny,nz,dxi,dyi,dzci,dzfi,visc,w,dwdt)
+  subroutine momz_d(nx,ny,nz,dxi,dyi,dzci,dzfi,visc,w, &
+#if defined(_IBM)
+                    psi_u,psi_v,psi_w, &
+#endif
+                    dwdt)
     implicit none
     integer , intent(in) :: nx,ny,nz
     real(rp), intent(in) :: dxi,dyi,visc
     real(rp), intent(in), dimension(0:) :: dzci,dzfi
     real(rp), dimension(0:,0:,0:), intent(in   ) :: w
+#if defined(_IBM)
+    real(rp), dimension(0:,0:,0:), intent(in   ) :: psi_u,psi_v,psi_w
+#endif
     real(rp), dimension( :, :, :), intent(inout) :: dwdt
     integer :: i,j,k
     real(rp) :: dwdxp,dwdxm,dwdyp,dwdym,dwdzp,dwdzm
@@ -202,7 +284,7 @@ module mod_mom
     !$acc parallel loop collapse(3) default(present) private(dwdxp,dwdxm,dwdyp,dwdym,dwdzp,dwdzm) async(1)
     !$OMP PARALLEL DO DEFAULT(none) &
     !$OMP PRIVATE(dwdxp,dwdxm,dwdyp,dwdym,dwdzp,dwdzm) &
-    !$OMP SHARED(nx,ny,nz,dxi,dyi,dzci,dzfi,w,dwdt,visc)
+    !$OMP SHARED(nx,ny,nz,dxi,dyi,dzci,dzfi,w,psi_u,psi_v,psi_w,dwdt,visc)
     do k=1,nz
       do j=1,ny
         do i=1,nx
@@ -212,6 +294,14 @@ module mod_mom
           dwdym = (w(i,j,k)-w(i,j-1,k))*dyi
           dwdzp = (w(i,j,k+1)-w(i,j,k))*dzfi(k+1)
           dwdzm = (w(i,j,k)-w(i,j,k-1))*dzfi(k  )
+#if defined(_IBM) && defined(_SIMPLE)
+          if (psi_w(i,j,k) == 0.) then ! if not in solid
+           if (psi_w(i+1,j,k) == 1.) dwdxp = -2._rp*w(i,j,k)*dxi
+           if (psi_w(i-1,j,k) == 1.) dwdxm =  2._rp*w(i,j,k)*dxi
+           if (psi_w(i,j+1,k) == 1.) dwdyp = -2._rp*w(i,j,k)*dyi
+           if (psi_w(i,j-1,k) == 1.) dwdym =  2._rp*w(i,j,k)*dyi
+          endif
+#endif
           dwdt(i,j,k) = dwdt(i,j,k) + &
                         (dwdxp-dwdxm)*visc*dxi + &
                         (dwdyp-dwdym)*visc*dyi + &
@@ -331,7 +421,7 @@ module mod_mom
           dvdzp = (v(i,j,k+1)-v(i,j,k))*dzci(k  )
           dvdzm = (v(i,j,k)-v(i,j,k-1))*dzci(k-1)
           dvdt(i,j,k) = dvdt(i,j,k) + &
-                        (dvdzp-dvdzm)*visc*dzfi(k)
+                       (dvdzp-dvdzm)*visc*dzfi(k)
         end do
       end do
     end do
@@ -628,7 +718,7 @@ module mod_mom
     tauz(:) = tau(:,3)
   end subroutine cmpt_wallshear
   !
-  subroutine mom_xyz_ad(nx,ny,nz,dxi,dyi,dzci,dzfi,visc,u,v,w,dudt,dvdt,dwdt,dudtd,dvdtd,dwdtd)
+  subroutine mom_xyz_ad(nx,ny,nz,dxi,dyi,dzci,dzfi,visc,u,v,w,dudt,dvdt,dwdt,dudtd,dvdtd,dwdtd,psi_u,psi_v,psi_w)
     !
     ! lump all r.h.s. of momentum terms (excluding pressure) into a single fast kernel
     !
@@ -637,6 +727,7 @@ module mod_mom
     real(rp), intent(in   ), dimension(0:) :: dzci,dzfi
     real(rp), intent(in   ) :: visc
     real(rp), intent(in   ), dimension(0:,0:,0:) :: u,v,w
+    real(rp), intent(in   ), dimension(0:,0:,0:), optional :: psi_u,psi_v,psi_w
     real(rp), intent(inout), dimension( :, :, :) :: dudt,dvdt,dwdt
     real(rp), intent(inout), dimension( :, :, :), optional :: dudtd,dvdtd,dwdtd
     integer  :: i,j,k
@@ -740,25 +831,50 @@ module mod_mom
           dudym = (u_ccc-u_cmc)*dyi
           dudzp = (u_ccp-u_ccc)*dzci(k  )
           dudzm = (u_ccc-u_ccm)*dzci(k-1)
+#if defined(_IBM) && defined(_SIMPLE)
+          if (psi_u(i,j,k) == 0._rp) then ! if not in solid
+            if (psi_u(i,j+1,k) == 1._rp) dudyp = -2._rp*u(i,j,k)*dyi
+            if (psi_u(i,j-1,k) == 1._rp) dudym =  2._rp*u(i,j,k)*dyi
+            if (psi_u(i,j,k+1) == 1._rp) dudzp = -2._rp*u(i,j,k)*dzci(k)
+            if (psi_u(i,j,k-1) == 1._rp) dudzm =  2._rp*u(i,j,k)*dzci(k)
+          endif
+          ! dudyp = dudyp - ((1. - psi_u(i,j,k))*psi_u(i,j+1,k)*dudyp) &
+                        ! + ((1. - psi_u(i,j,k))*psi_u(i,j+1,k)*(-2._rp*u(i,j,k)*dyi))
+          ! dudym = dudym - ((1. - psi_u(i,j,k))*psi_u(i,j-1,k)*dudym) &
+                        ! + ((1. - psi_u(i,j,k))*psi_u(i,j-1,k)*( 2._rp*u(i,j,k)*dyi))
+          ! dudzp = dudzp - ((1. - psi_u(i,j,k))*psi_u(i,j,k+1)*dudzp) &
+                        ! + ((1. - psi_u(i,j,k))*psi_u(i,j,k+1)*(-2._rp*u(i,j,k)*dzci(k)))
+          ! dudzm = dudzm - ((1. - psi_u(i,j,k))*psi_u(i,j,k-1)*dudzm) &
+                        ! + ((1. - psi_u(i,j,k))*psi_u(i,j,k-1)*( 2._rp*u(i,j,k)*dzci(k)))
+#endif
           !
           ! x advection
           !
-          uuip  = 0.25*(u_pcc+u_ccc)*(u_pcc+u_ccc)
-          uuim  = 0.25*(u_mcc+u_ccc)*(u_mcc+u_ccc)
-          uvjp  = 0.25*(u_cpc+u_ccc)*(v_pcc+v_ccc)
-          uvjm  = 0.25*(u_cmc+u_ccc)*(v_pmc+v_cmc)
-          uwkp  = 0.25*(u_ccp+u_ccc)*(w_pcc+w_ccc)
-          uwkm  = 0.25*(u_ccm+u_ccc)*(w_pcm+w_ccm)
+          uuip  = 0.25_rp*(u_pcc+u_ccc)*(u_pcc+u_ccc)
+          uuim  = 0.25_rp*(u_mcc+u_ccc)*(u_mcc+u_ccc)
+          uvjp  = 0.25_rp*(u_cpc+u_ccc)*(v_pcc+v_ccc)
+          uvjm  = 0.25_rp*(u_cmc+u_ccc)*(v_pmc+v_cmc)
+          uwkp  = 0.25_rp*(u_ccp+u_ccc)*(w_pcc+w_ccc)
+          uwkm  = 0.25_rp*(u_ccm+u_ccc)*(w_pcm+w_ccm)
+#if defined(_IBM) && defined(_SIMPLE)
+          if (psi_u(i,j,k) == 0._rp) then ! if not in solid
+            if (psi_u(i,j+1,k) == 1._rp) uvjp  = 0._rp
+            if (psi_u(i,j-1,k) == 1._rp) uvjm  = 0._rp
+            if (psi_u(i,j,k+1) == 1._rp) uwkp  = 0._rp
+            if (psi_u(i,j,k-1) == 1._rp) uwkm  = 0._rp
+          endif
+          ! uvjp = uvjp - ((1. - psi_u(i,j,k))*psi_u(i,j+1,k)*uvjp)
+          ! uvjm = uvjm - ((1. - psi_u(i,j,k))*psi_u(i,j-1,k)*uvjm)
+          ! uwkp = uwkp - ((1. - psi_u(i,j,k))*psi_u(i,j,k+1)*uwkp)
+          ! uwkm = uwkm - ((1. - psi_u(i,j,k))*psi_u(i,j,k-1)*uwkm)
+#endif
           !
-          dudtd_xy_s = &
-                         visc*(dudxp-dudxm)*dxi + &
-                         visc*(dudyp-dudym)*dyi
-          dudtd_z_s  = &
-                         visc*(dudzp-dudzm)*dzfi(k)
-          dudt_s     = &
-                             -(uuip -uuim )*dxi - &
-                              (uvjp -uvjm )*dyi - &
-                              (uwkp -uwkm )*dzfi(k)
+          dudtd_xy_s = visc*(dudxp-dudxm)*dxi + &
+                       visc*(dudyp-dudym)*dyi
+          dudtd_z_s  = visc*(dudzp-dudzm)*dzfi(k)
+          dudt_s     = -(uuip -uuim )*dxi - &
+                        (uvjp -uvjm )*dyi - &
+                        (uwkp -uwkm )*dzfi(k)
           !
           ! y diffusion
           !
@@ -768,25 +884,50 @@ module mod_mom
           dvdym = (v_ccc-v_cmc)*dyi
           dvdzp = (v_ccp-v_ccc)*dzci(k  )
           dvdzm = (v_ccc-v_ccm)*dzci(k-1)
+#if defined(_IBM) && defined(_SIMPLE)
+          if (psi_v(i,j,k) == 0._rp) then ! if not in solid
+            if (psi_v(i+1,j,k) == 1._rp) dvdxp = -2._rp*v(i,j,k)*dxi
+            if (psi_v(i-1,j,k) == 1._rp) dvdxm =  2._rp*v(i,j,k)*dxi
+            if (psi_v(i,j,k+1) == 1._rp) dvdzp = -2._rp*v(i,j,k)*dzci(k)
+            if (psi_v(i,j,k-1) == 1._rp) dvdzm =  2._rp*v(i,j,k)*dzci(k)
+          endif
+          ! dvdxp = dvdxp - ((1. - psi_v(i,j,k))*psi_v(i+1,j,k)*dvdxp) &
+                        ! + ((1. - psi_v(i,j,k))*psi_v(i+1,j,k)*(-2._rp*v(i,j,k)*dxi))
+          ! dvdxm = dvdxm - ((1. - psi_v(i,j,k))*psi_v(i-1,j,k)*dvdxm) &
+                        ! + ((1. - psi_v(i,j,k))*psi_v(i-1,j,k)*( 2._rp*v(i,j,k)*dxi))
+          ! dvdzp = dvdzp - ((1. - psi_v(i,j,k))*psi_v(i,j,k+1)*dvdzp) &
+                        ! + ((1. - psi_v(i,j,k))*psi_v(i,j,k+1)*(-2._rp*v(i,j,k)*dzci(k)))
+          ! dvdzm = dvdzm - ((1. - psi_v(i,j,k))*psi_v(i,j,k-1)*dvdzm) &
+                        ! + ((1. - psi_v(i,j,k))*psi_v(i,j,k-1)*( 2._rp*v(i,j,k)*dzci(k)))
+#endif
           !
           ! y advection
           !
-          uvip  = 0.25*(u_ccc+u_cpc)*(v_ccc+v_pcc)
-          uvim  = 0.25*(u_mcc+u_mpc)*(v_ccc+v_mcc)
-          vvjp  = 0.25*(v_ccc+v_cpc)*(v_ccc+v_cpc)
-          vvjm  = 0.25*(v_ccc+v_cmc)*(v_ccc+v_cmc)
-          wvkp  = 0.25*(w_ccc+w_cpc)*(v_ccp+v_ccc)
-          wvkm  = 0.25*(w_ccm+w_cpm)*(v_ccm+v_ccc)
+          uvip  = 0.25_rp*(u_ccc+u_cpc)*(v_ccc+v_pcc)
+          uvim  = 0.25_rp*(u_mcc+u_mpc)*(v_ccc+v_mcc)
+          vvjp  = 0.25_rp*(v_ccc+v_cpc)*(v_ccc+v_cpc)
+          vvjm  = 0.25_rp*(v_ccc+v_cmc)*(v_ccc+v_cmc)
+          wvkp  = 0.25_rp*(w_ccc+w_cpc)*(v_ccp+v_ccc)
+          wvkm  = 0.25_rp*(w_ccm+w_cpm)*(v_ccm+v_ccc)
+#if defined(_IBM) && defined(_SIMPLE)
+          if (psi_v(i,j,k) == 0._rp) then ! if not in solid
+            if (psi_v(i+1,j,k) == 1._rp) uvip = 0._rp
+            if (psi_v(i-1,j,k) == 1._rp) uvim = 0._rp
+            if (psi_v(i,j,k+1) == 1._rp) wvkp = 0._rp
+            if (psi_v(i,j,k-1) == 1._rp) wvkm = 0._rp
+          endif
+          ! uvip = uvip - ((1. - psi_v(i,j,k))*psi_v(i+1,j,k)*uvip)
+          ! uvim = uvim - ((1. - psi_v(i,j,k))*psi_v(i-1,j,k)*uvim)
+          ! wvkp = wvkp - ((1. - psi_v(i,j,k))*psi_v(i,j,k+1)*wvkp)
+          ! wvkm = wvkm - ((1. - psi_v(i,j,k))*psi_v(i,j,k-1)*wvkm)
+#endif
           !
-          dvdtd_xy_s = &
-                         visc*(dvdxp-dvdxm)*dxi + &
-                         visc*(dvdyp-dvdym)*dyi
-          dvdtd_z_s  = &
-                         visc*(dvdzp-dvdzm)*dzfi(k)
-          dvdt_s     = &
-                             -(uvip -uvim )*dxi - &
-                              (vvjp -vvjm )*dyi - &
-                              (wvkp -wvkm )*dzfi(k)
+          dvdtd_xy_s = visc*(dvdxp-dvdxm)*dxi + &
+                       visc*(dvdyp-dvdym)*dyi
+          dvdtd_z_s  = visc*(dvdzp-dvdzm)*dzfi(k)
+          dvdt_s     = -(uvip -uvim )*dxi - &
+                        (vvjp -vvjm )*dyi - &
+                        (wvkp -wvkm )*dzfi(k)
           !
           ! z diffusion
           !
@@ -796,25 +937,50 @@ module mod_mom
           dwdym = (w_ccc-w_cmc)*dyi
           dwdzp = (w_ccp-w_ccc)*dzfi(k+1)
           dwdzm = (w_ccc-w_ccm)*dzfi(k  )
+#if defined(_IBM) && defined(_SIMPLE)
+          if (psi_w(i,j,k) == 0._rp) then ! if not in solid
+           if (psi_w(i+1,j,k) == 1._rp) dwdxp = -2._rp*w(i,j,k)*dxi
+           if (psi_w(i-1,j,k) == 1._rp) dwdxm =  2._rp*w(i,j,k)*dxi
+           if (psi_w(i,j+1,k) == 1._rp) dwdyp = -2._rp*w(i,j,k)*dyi
+           if (psi_w(i,j-1,k) == 1._rp) dwdym =  2._rp*w(i,j,k)*dyi
+          endif
+          ! dwdxp = dwdxp - ((1. - psi_v(i,j,k))*psi_v(i+1,j,k)*dwdxp) &
+                        ! + ((1. - psi_v(i,j,k))*psi_v(i+1,j,k)*(-2._rp*w(i,j,k)*dxi))
+          ! dwdxm = dwdxm - ((1. - psi_v(i,j,k))*psi_v(i-1,j,k)*dwdxm) &
+                        ! + ((1. - psi_v(i,j,k))*psi_v(i-1,j,k)*( 2._rp*w(i,j,k)*dxi))
+          ! dwdyp = dwdyp - ((1. - psi_v(i,j,k))*psi_v(i,j,k+1)*dwdyp) &
+                        ! + ((1. - psi_v(i,j,k))*psi_v(i,j,k+1)*(-2._rp*w(i,j,k)*dyi))
+          ! dwdym = dwdym - ((1. - psi_v(i,j,k))*psi_v(i,j,k-1)*dwdym) &
+                        ! + ((1. - psi_v(i,j,k))*psi_v(i,j,k-1)*( 2._rp*w(i,j,k)*dyi))
+#endif
           !
           ! z advection
           !
-          uwip  = 0.25*(w_ccc+w_pcc)*(u_ccc+u_ccp)
-          uwim  = 0.25*(w_ccc+w_mcc)*(u_mcc+u_mcp)
-          vwjp  = 0.25*(w_ccc+w_cpc)*(v_ccc+v_ccp)
-          vwjm  = 0.25*(w_ccc+w_cmc)*(v_cmc+v_cmp)
-          wwkp  = 0.25*(w_ccc+w_ccp)*(w_ccc+w_ccp)
-          wwkm  = 0.25*(w_ccc+w_ccm)*(w_ccc+w_ccm)
+          uwip  = 0.25_rp*(w_ccc+w_pcc)*(u_ccc+u_ccp)
+          uwim  = 0.25_rp*(w_ccc+w_mcc)*(u_mcc+u_mcp)
+          vwjp  = 0.25_rp*(w_ccc+w_cpc)*(v_ccc+v_ccp)
+          vwjm  = 0.25_rp*(w_ccc+w_cmc)*(v_cmc+v_cmp)
+          wwkp  = 0.25_rp*(w_ccc+w_ccp)*(w_ccc+w_ccp)
+          wwkm  = 0.25_rp*(w_ccc+w_ccm)*(w_ccc+w_ccm)
+#if defined(_IBM) && defined(_SIMPLE)
+          if (psi_w(i,j,k) == 0._rp) then ! if not in solid
+           if (psi_w(i+1,j,k) == 1._rp) uwip = 0._rp
+           if (psi_w(i-1,j,k) == 1._rp) uwim = 0._rp
+           if (psi_w(i,j+1,k) == 1._rp) vwjp = 0._rp
+           if (psi_w(i,j-1,k) == 1._rp) vwjm = 0._rp
+          endif
+          ! uwip = uvip - ((1. - psi_w(i,j,k))*psi_w(i+1,j,k)*uwip)
+          ! uwim = uwim - ((1. - psi_w(i,j,k))*psi_w(i-1,j,k)*uwim)
+          ! vwjp = vwjp - ((1. - psi_w(i,j,k))*psi_w(i,j+1,k)*vwjp)
+          ! vwjm = vwjm - ((1. - psi_w(i,j,k))*psi_w(i,j-1,k)*vwjm)
+#endif
           !
-          dwdtd_xy_s =  &
-                          visc*(dwdxp-dwdxm)*dxi + &
-                          visc*(dwdyp-dwdym)*dyi
-          dwdtd_z_s =   &
-                          visc*(dwdzp-dwdzm)*dzci(k)
-          dwdt_s     =  &
-                              -(uwip -uwim )*dxi - &
-                               (vwjp -vwjm )*dyi - &
-                               (wwkp -wwkm )*dzci(k)
+          dwdtd_xy_s = visc*(dwdxp-dwdxm)*dxi + &
+                       visc*(dwdyp-dwdym)*dyi
+          dwdtd_z_s  = visc*(dwdzp-dwdzm)*dzci(k)
+          dwdt_s     =  -(uwip -uwim )*dxi - &
+                         (vwjp -vwjm )*dyi - &
+                         (wwkp -wwkm )*dzci(k)
 #if defined(_IMPDIFF)
 #if defined(_IMPDIFF_1D)
           dudt_s = dudt_s + dudtd_xy_s

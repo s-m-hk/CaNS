@@ -6,6 +6,9 @@
 ! -
 module mod_chkdt
   use mpi
+#if defined(_HEAT_TRANSFER)
+  use mod_param, only: alph_s,alph_f
+#endif
   use mod_common_mpi, only:ierr
   use mod_types
   implicit none
@@ -13,8 +16,9 @@ module mod_chkdt
   public chkdt
   contains
   subroutine chkdt(n,dl,dzci,dzfi,visc,u,v,w,dtmax)
+    !@cuf use cudafor
     !
-    ! computes maximum allowed time step
+    ! computes maximum allowed timestep
     !
     implicit none
     integer , intent(in), dimension(3) :: n
@@ -25,7 +29,7 @@ module mod_chkdt
     real(rp), intent(out) :: dtmax
     real(rp) :: dxi,dyi,dzi
     real(rp) :: ux,uy,uz,vx,vy,vz,wx,wy,wz
-    real(rp) :: dtix,dtiy,dtiz,dti
+    real(rp) :: dtix,dtiy,dtiz,dti,dthf,dths
     integer :: i,j,k
     real(rp), save :: dlmin
     logical , save :: is_first = .true.
@@ -76,6 +80,11 @@ module mod_chkdt
     dtmax = sqrt(3.)/dti
 #else
     dtmax = min(1.65/12./visc*dlmin**2,sqrt(3.)/dti)
+#endif
+#if defined(_HEAT_TRANSFER)
+    dthf   = 1.65/12./alph_f*dlmin**2
+    dths   = 1.65/12./alph_s*dlmin**2
+    dtmax  = min(dtmax,dthf,dthf)
 #endif
   end subroutine chkdt
 end module mod_chkdt

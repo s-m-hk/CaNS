@@ -6,6 +6,7 @@
 ! -
 module mod_initgrid
   use mod_param, only:pi
+  use mod_common_mpi, only: myid
   use mod_types
   implicit none
   private
@@ -18,10 +19,12 @@ module mod_initgrid
     implicit none
     character(len=3), intent(in) :: inivel
     integer , intent(in ) :: n
-    real(rp), intent(in ) :: gr,lz
+    real(rp), intent(in ) :: gr
+    real(rp), intent(inout) :: lz
     real(rp), intent(out), dimension(0:n+1) :: dzc,dzf,zc,zf
     real(rp) :: z0
     integer :: k
+    logical :: read_z
     procedure (), pointer :: gridpoint => null()
     select case(inivel)
     case('zer','log','poi','cou')
@@ -31,6 +34,7 @@ module mod_initgrid
     case default
       gridpoint => gridpoint_cluster_two_end
     end select
+    inquire(file='zf.dat',exist=read_z)
     !
     ! step 1) determine coordinates of cell faces zf
     !
@@ -45,7 +49,20 @@ module mod_initgrid
       zf(k) = zf(k)*lz
     end do
     !
-    ! step 2) determine grid spacing between faces dzf
+    ! step 2) if coordinate file for zf exists, read them in
+    !
+    if(read_z)then
+      zf(:) = 0._rp
+      open(unit=12,file='zf.dat',status='old',action='read')
+      read(12,*) (zf(k), k=0,n)
+      close(12)
+      lz = zf(n)-zf(0)
+      k=n+1
+      zf(k) = 2._rp*zf(k-1)-zf(k-2)
+    if(myid == 0) print*, '*** Wall-normal coordinates read ***'
+    endif
+    !
+    ! step 3) determine grid spacing between faces dzf
     !
     do k=1,n
       dzf(k) = zf(k)-zf(k-1)
@@ -53,21 +70,29 @@ module mod_initgrid
     dzf(0  ) = dzf(1)
     dzf(n+1) = dzf(n)
     !
-    ! step 3) determine grid spacing between centers dzc
+    ! step 4) determine grid spacing between centers dzc
     !
     do k=0,n
       dzc(k) = .5*(dzf(k)+dzf(k+1))
     end do
     dzc(n+1) = dzc(n)
     !
-    ! step 4) compute coordinates of cell centers zc and faces zf
+    ! step 5) compute coordinates of cell centers zc and faces zf
     !
-    zc(0)    = -dzc(0)/2.
-    zf(0)    = 0.
-    do k=1,n+1
+    if(.not.read_z) then
+      zc(0) = -dzc(0)/2.
+      zf(0) = 0.
+     do k=1,n+1
       zc(k) = zc(k-1) + dzc(k-1)
       zf(k) = zf(k-1) + dzf(k)
-    end do
+     enddo
+    else
+     do k=1,n+1
+      zc(k) = .5*(zf(k-1) + zf(k))
+     enddo
+      zc(0)=2.*zf(0)-zc(1)
+    endif
+    return
   end subroutine initgrid
   !
   ! grid stretching functions
@@ -150,7 +175,7 @@ module mod_initgrid
     !
     n = nzg/2._rp
     retau = 1._rp/(1._rp+(n/kb)**2)*(dyp*n+(3._rp/4._rp*alpha*c_eta*n)**(4._rp/3._rp)*(n/kb)**2)
-    if(kg==1) print*,'Grid targeting Retau = ',retau
+    if(kg==1) print*,'*** Grid targeting Re_tau = ***',retau
     k = 1._rp*min(kg,(nzg-kg))
     !
     ! dermine z/(2h)

@@ -185,6 +185,9 @@ module mod_initmpi
     n_z(:)     = zsize(:)
     do l=1,3
       call makehalo(l,1,n(:),halo(l))
+#if defined(_IBM_BC)
+      call makehalo(l,6,n(:),halo_big(l))
+#endif
     end do
     nb(:,ipencil) = MPI_PROC_NULL
     call MPI_CART_SHIFT(comm_cart,0,1,nb(0,ipencil_t(1)),nb(1,ipencil_t(1)),ierr)

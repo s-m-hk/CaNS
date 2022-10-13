@@ -6,11 +6,11 @@
 ! -
 module mod_bound
   use mpi
-  use mod_common_mpi, only: ierr,halo,ipencil_axis
+  use mod_common_mpi, only: ierr,halo,halo_big,ipencil_axis
   use mod_types
   implicit none
   private
-  public boundp,bounduvw,updt_rhs_b
+  public boundp,bounduvw,updt_rhs_b,updthalo
   contains
   subroutine bounduvw(cbc,n,bc,nb,is_bound,is_correc,dl,dzc,dzf,u,v,w)
     !
@@ -544,4 +544,5 @@ module mod_bound
     !$acc end host_data
   end subroutine updthalo_gpu
 #endif
+  
 end module mod_bound

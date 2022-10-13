@@ -4,6 +4,7 @@ FC = mpifort
 endif
 ifeq ($(strip $(FCOMP)),INTEL)
 FC = mpiifort
+CPP = -fpp
 endif
 ifeq ($(strip $(FCOMP)),NVIDIA)
 FC = mpifort

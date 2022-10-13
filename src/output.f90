@@ -11,7 +11,7 @@ module mod_output
   use mod_types
   implicit none
   private
-  public out0d,out1d,out1d_chan,out2d,out3d,write_log_output,write_visu_2d,write_visu_3d
+  public out0d,out1d,out1d_chan,out1d_chan_tmp,out2d,out3d,write_log_output,write_visu_2d,write_visu_3d
   contains
   subroutine out0d(fname,n,var)
     !
@@ -294,15 +294,15 @@ module mod_output
     call write_log_output(trim(datadir)//trim(fname_log),trim(fname_bin),trim(varname),nmin_2d,nmax_2d,[1,1,1],time,istep)
   end subroutine write_visu_2d
   !
-  subroutine out1d_chan(fname,ng,lo,hi,idir,l,dl,z_g,u,v,w) ! e.g. for a channel with streamwise dir in x
+  subroutine out1d_chan(fname,ng,lo,hi,idir,l,dl,z_g,u,v,w,p) ! e.g. for a channel with streamwise dir in x
     implicit none
     character(len=*), intent(in) :: fname
     integer , intent(in), dimension(3) :: ng,lo,hi
     integer , intent(in) :: idir
     real(rp), intent(in), dimension(3) :: l,dl
     real(rp), intent(in), dimension(0:) :: z_g
-    real(rp), intent(in), dimension(lo(1)-1:,lo(2)-1:,lo(3)-1:) :: u,v,w
-    real(rp), allocatable, dimension(:) :: um,vm,wm,u2,v2,w2,uw
+    real(rp), intent(in), dimension(lo(1)-1:,lo(2)-1:,lo(3)-1:) :: u,v,w,p
+    real(rp), allocatable, dimension(:) :: um,vm,wm,pm,u2,v2,w2,p2,uw
     integer :: i,j,k
     integer :: iunit
     integer :: q
@@ -326,9 +326,11 @@ module mod_output
             um(k) = um(k) + u(i,j,k)
             vm(k) = vm(k) + v(i,j,k)
             wm(k) = wm(k) + 0.50*(w(i,j,k-1) + w(i,j,k))
+            pm(k) = pm(k) + p(i,j,k)
             u2(k) = u2(k) + u(i,j,k)**2
             v2(k) = v2(k) + v(i,j,k)**2
             w2(k) = w2(k) + 0.50*(w(i,j,k)**2+w(i,j,k-1)**2)
+            p2(k) = p2(k) + p(i,j,k)**2
             uw(k) = uw(k) + 0.25*(u(i-1,j,k) + u(i,j,k))* &
                                  (w(i,j,k-1) + w(i,j,k))
           end do
@@ -337,22 +339,26 @@ module mod_output
       call MPI_ALLREDUCE(MPI_IN_PLACE,um(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
       call MPI_ALLREDUCE(MPI_IN_PLACE,vm(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
       call MPI_ALLREDUCE(MPI_IN_PLACE,wm(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+      call MPI_ALLREDUCE(MPI_IN_PLACE,pm(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
       call MPI_ALLREDUCE(MPI_IN_PLACE,u2(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
       call MPI_ALLREDUCE(MPI_IN_PLACE,v2(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
       call MPI_ALLREDUCE(MPI_IN_PLACE,w2(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+      call MPI_ALLREDUCE(MPI_IN_PLACE,p2(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
       call MPI_ALLREDUCE(MPI_IN_PLACE,uw(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
       um(:) = um(:)*grid_area_ratio
       vm(:) = vm(:)*grid_area_ratio
       wm(:) = wm(:)*grid_area_ratio
+      pm(:) = pm(:)*grid_area_ratio
       u2(:) = sqrt(u2(:)*grid_area_ratio - um(:)**2)
       v2(:) = sqrt(v2(:)*grid_area_ratio - vm(:)**2)
       w2(:) = sqrt(w2(:)*grid_area_ratio - wm(:)**2)
+      p2(:) = sqrt(p2(:)*grid_area_ratio - pm(:)**2)
       uw(:) = uw(:)*grid_area_ratio - um(:)*wm(:)
       if(myid == 0) then
         open(newunit=iunit,file=fname)
         do k=1,ng(3)
-          write(iunit,'(8E16.7e3)') z_g(k),um(k),vm(k),wm(k), &
-                                           u2(k),v2(k),w2(k), &
+          write(iunit,'(8E16.7e3)') z_g(k),um(k),vm(k),wm(k),pm(k), &
+                                           u2(k),v2(k),w2(k),p2(k), &
                                            uw(k)
         end do
         close(iunit)
@@ -396,12 +402,12 @@ module mod_output
       do k=lo(3),hi(3)
         do i=lo(1),hi(1)
           do j=lo(2),hi(2)
-            um(i,k) = um(i,k) + 0.5*(u(i-1,j,k)+u(i,j,k))
+            um(i,k) = um(i,k) + 0.50*(u(i-1,j,k)+u(i,j,k))
             vm(i,k) = vm(i,k) + v(i,j,k)
-            wm(i,k) = wm(i,k) + 0.5*(w(i,j,k-1)+w(i,j,k))
-            u2(i,k) = u2(i,k) + 0.5*(u(i-1,j,k)**2+u(i,j,k)**2)
+            wm(i,k) = wm(i,k) + 0.50*(w(i,j,k-1)+w(i,j,k))
+            u2(i,k) = u2(i,k) + 0.50*(u(i-1,j,k)**2+u(i,j,k)**2)
             v2(i,k) = v2(i,k) + v(i,j,k)**2
-            w2(i,k) = w2(i,k) + 0.5*(w(i,j,k-1)**2+w(i,j,k)**2)
+            w2(i,k) = w2(i,k) + 0.50*(w(i,j,k-1)**2+w(i,j,k)**2)
             vw(i,k) = vw(i,k) + 0.25*(v(i,j-1,k) + v(i,j,k))* &
                                      (w(i,j,k-1) + w(i,j,k))
             uv(i,k) = uv(i,k) + 0.25*(u(i-1,j,k) + u(i,j,k))* &
@@ -455,11 +461,11 @@ module mod_output
         do j=lo(2),hi(2)
           do i=lo(1),hi(1)
             um(j,k) = um(j,k) + u(i,j,k)
-            vm(j,k) = vm(j,k) + 0.5*(v(i,j-1,k)+v(i,j,k))
-            wm(j,k) = wm(j,k) + 0.5*(w(i,j,k-1)+w(i,j,k))
+            vm(j,k) = vm(j,k) + 0.50*(v(i,j-1,k)+v(i,j,k))
+            wm(j,k) = wm(j,k) + 0.50*(w(i,j,k-1)+w(i,j,k))
             u2(j,k) = u2(j,k) + u(i,j,k)**2
-            v2(j,k) = v2(j,k) + 0.5*(v(i,j-1,k)**2+v(i,j,k)**2)
-            w2(j,k) = w2(j,k) + 0.5*(w(i,j,k-1)**2+w(i,j,k)**2)
+            v2(j,k) = v2(j,k) + 0.50*(v(i,j-1,k)**2+v(i,j,k)**2)
+            w2(j,k) = w2(j,k) + 0.50*(w(i,j,k-1)**2+w(i,j,k)**2)
             uv(j,k) = uv(j,k) + 0.25*(u(i-1,j,k) + u(i,j,k))* &
                                      (v(i,j-1,k) + v(i,j,k))
             uw(j,k) = uw(j,k) + 0.25*(u(i-1,j,k) + u(i,j,k))* &
@@ -497,4 +503,69 @@ module mod_output
       end if
     end select
   end subroutine out2d_duct
+
+  subroutine out1d_chan_tmp(fname,ng,lo,hi,idir,l,dl,z_g,u,v,w,s)
+    implicit none
+    character(len=*), intent(in) :: fname
+    integer , intent(in), dimension(3)  :: ng,lo,hi
+    integer , intent(in) :: idir
+    real(rp), intent(in), dimension(3) :: l,dl
+    real(rp), intent(in), dimension(0:) :: z_g
+    real(rp), intent(in), dimension(lo(1)-1:,lo(2)-1:,lo(3)-1:) :: u,v,w,s
+    real(rp), allocatable, dimension(:) :: um,vm,wm,sm,s2,us,vs,ws
+    integer :: i,j,k
+    integer :: iunit
+    integer :: q
+    real(rp) :: grid_area_ratio
+    !
+    q = ng(idir)
+    grid_area_ratio = dl(1)*dl(2)/(l(1)*l(2))
+    allocate(um(0:q+1),vm(0:q+1),wm(0:q+1),sm(0:q+1),s2(0:q+1),us(0:q+1),vs(0:q+1),ws(0:q+1))
+    um(k) = 0.
+    vm(k) = 0.
+    wm(k) = 0.
+    sm(k) = 0.
+    s2(k) = 0.
+    us(k) = 0.
+    vs(k) = 0.
+    ws(k) = 0.
+    do k=lo(3),hi(3)
+      do j=lo(2),hi(2)
+        do i=lo(1),hi(1)
+          sm(k) = sm(k) + s(i,j,k)
+          s2(k) = s2(k) + s(i,j,k)**2
+          um(k) = um(k) + 0.50*(u(i-1,j,k)+u(i,j,k))
+          vm(k) = vm(k) + 0.50*(v(i-1,j,k)+v(i,j,k))
+          wm(k) = wm(k) + 0.50*(w(i,j,k-1) + w(i,j,k))
+          us(k) = us(k) + 0.50*(u(i,j,k)+u(i-1,j,k))*s(i,j,k)
+          vs(k) = vs(k) + 0.50*(v(i,j,k)+v(i,j-1,k))*s(i,j,k)
+          ws(k) = ws(k) + 0.50*(w(i,j,k)+w(i,j,k-1))*s(i,j,k)
+        enddo
+      enddo
+    enddo
+    call MPI_ALLREDUCE(MPI_IN_PLACE,sm(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_ALLREDUCE(MPI_IN_PLACE,um(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_ALLREDUCE(MPI_IN_PLACE,vm(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_ALLREDUCE(MPI_IN_PLACE,wm(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_ALLREDUCE(MPI_IN_PLACE,s2(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_ALLREDUCE(MPI_IN_PLACE,us(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_ALLREDUCE(MPI_IN_PLACE,vs(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_ALLREDUCE(MPI_IN_PLACE,ws(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    um(:) = um(:)*grid_area_ratio
+    vm(:) = vm(:)*grid_area_ratio
+    wm(:) = wm(:)*grid_area_ratio
+    sm(:) = sm(:)*grid_area_ratio  
+    s2(:) = sqrt(s2(:)*grid_area_ratio - sm(:)**2)
+    us(:) = us(:)*grid_area_ratio - um(:)*sm(:)
+    vs(:) = vs(:)*grid_area_ratio - vm(:)*sm(:)
+    ws(:) = ws(:)*grid_area_ratio - wm(:)*sm(:)
+    if(myid.eq.0) then
+       open(newunit=iunit,file=fname)
+       do k=1,ng(3)
+         write(iunit,'(8E16.7e3)') z_g(k),sm(k),s2(k), &
+                                          us(k),vs(k),ws(k)
+       enddo
+      close(iunit)
+    endif
+  end subroutine out1d_chan_tmp
 end module mod_output

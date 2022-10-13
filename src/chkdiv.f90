@@ -28,8 +28,8 @@ module mod_chkdiv
     dxi = dli(1)
     dyi = dli(2)
     !dzi = dli(3)
-    divtot = 0.
-    divmax = 0.
+    divtot = 0._rp
+    divmax = 0._rp
     !$acc data copy(divtot,divmax) async(1)
     !$acc parallel loop collapse(3) default(present) private(div) reduction(+:divtot) reduction(max:divmax) async(1)
     !$OMP PARALLEL DO DEFAULT(none) &

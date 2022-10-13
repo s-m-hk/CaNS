@@ -8,6 +8,6 @@ module mod_common_mpi
   implicit none
   public
   integer :: myid,ierr
-  integer :: halo(3)
+  integer :: halo(3),halo_big(3)
   integer :: ipencil_axis
 end module mod_common_mpi

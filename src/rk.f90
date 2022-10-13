@@ -6,25 +6,46 @@
 ! -
 #define _FAST_MOM_KERNELS
 module mod_rk
-  use mod_mom  , only: momx_a,momy_a,momz_a, &
-                       momx_d,momy_d,momz_d, &
-                       momx_p,momy_p,momz_p, cmpt_wallshear
+  use mod_mom    ,  only: momx_a,momy_a,momz_a, &
+                          momx_d,momy_d,momz_d, &
+                          momx_p,momy_p,momz_p, cmpt_wallshear
 #if defined(_IMPDIFF_1D)
-  use mod_mom  , only: momx_d_xy,momy_d_xy,momz_d_xy, &
-                       momx_d_z ,momy_d_z ,momz_d_z
+  use mod_mom    ,  only: momx_d_xy,momy_d_xy,momz_d_xy, &
+                          momx_d_z ,momy_d_z ,momz_d_z
 #endif
 #if defined(_FAST_MOM_KERNELS)
-  use mod_mom  , only: mom_xyz_ad
+  use mod_mom    ,  only: mom_xyz_ad
 #endif
-  use mod_scal , only: scal
-  use mod_utils, only: bulk_mean,swap
+  use mod_scal   ,  only: scal
+  use mod_source ,  only: grav_src
+#if defined(_IBM)
+  use mod_forcing,  only: force_vel,  &
+#if defined(_HEAT_TRANSFER)
+                          force_scal, &
+#endif
+                          force_bulk_vel
+#endif
+  use mod_common_mpi, only: myid
+  use mod_utils,    only: bulk_mean,swap
   use mod_types
   implicit none
   private
-  public rk
+  public rk,rk_scal
   contains
-  subroutine rk(rkpar,n,dli,l,dzci,dzfi,grid_vol_ratio_c,grid_vol_ratio_f,visc,dt,p, &
-                is_bound,is_forced,velf,bforce,tauxo,tauyo,tauzo,u,v,w,f)
+  subroutine rk(rkpar,n,dli,l,zc,zf,dzci,dzfi,grid_vol_ratio_c,grid_vol_ratio_f,visc,dt,p, &
+                is_bound,is_forced,velf,bforce,tauxo,tauyo,tauzo,u,v,w, &
+#if defined(_IBM)
+                dl,dzc,dzf, &
+                psi_u,psi_v,psi_w, &
+                fibm, &
+#endif
+#if defined(_HEAT_TRANSFER)
+                s, &
+#endif
+#if defined(_LPP)
+                duconv,dvconv,dwconv, &
+#endif
+                f)
     !
     ! low-storage 3rd-order Runge-Kutta scheme
     ! for time integration of the momentum equations.
@@ -35,7 +56,11 @@ module mod_rk
     integer , intent(in), dimension(3) :: n
     real(rp), intent(in) :: visc,dt
     real(rp), intent(in   ), dimension(3) :: dli,l
-    real(rp), intent(in   ), dimension(0:) :: dzci,dzfi
+#if defined(_IBM)
+    real(rp), intent(in   ), dimension(3)  :: dl
+    real(rp), intent(in   ), dimension(0:) :: dzc,dzf
+#endif
+    real(rp), intent(in   ), dimension(0:) :: zc,zf,dzci,dzfi
     real(rp), intent(in   ), dimension(0:) :: grid_vol_ratio_c,grid_vol_ratio_f
     real(rp), intent(in   ), dimension(0:,0:,0:) :: p
     logical , intent(in   ), dimension(0:1,3)    :: is_bound
@@ -49,6 +74,16 @@ module mod_rk
     real(rp), pointer    , contiguous , dimension(:,:,:), save :: dudtrk   ,dvdtrk   ,dwdtrk   , &
                                                                   dudtrko  ,dvdtrko  ,dwdtrko
     real(rp),              allocatable, dimension(:,:,:), save :: dudtrkd  ,dvdtrkd  ,dwdtrkd
+#if defined(_IBM)
+    real(rp), intent(in   ), dimension(0:,0:,0:) :: psi_u,psi_v,psi_w
+    real(rp), intent(out), dimension(4) :: fibm
+#endif
+#if defined(_HEAT_TRANSFER)
+    real(rp), intent(in   ), dimension(0:,0:,0:) :: s
+#endif
+#if defined(_LPP)
+    real(rp), intent(out), dimension(:,:,:) :: duconv,dvconv,dwconv
+#endif
     logical, save :: is_first = .true.
     real(rp) :: factor1,factor2,factor12
     real(rp), dimension(3) :: taux,tauy,tauz
@@ -103,8 +138,18 @@ module mod_rk
 #endif
     end if
     !
+#if defined(_IBM) && defined(_SIMPLE)
+    !
+    ! IBM forcing
+    !
+  call force_vel(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fibm)
+#endif
 #if defined(_FAST_MOM_KERNELS)
-    call mom_xyz_ad(n(1),n(2),n(3),dli(1),dli(2),dzci,dzfi,visc,u,v,w,dudtrk,dvdtrk,dwdtrk,dudtrkd,dvdtrkd,dwdtrkd)
+    call mom_xyz_ad(n(1),n(2),n(3),dli(1),dli(2),dzci,dzfi,visc,u,v,w,dudtrk,dvdtrk,dwdtrk,dudtrkd,dvdtrkd,dwdtrkd &
+#if defined(_IBM) && defined(_SIMPLE)
+                    ,psi_u,psi_v,psi_w &
+#endif
+                    )
 #else
     !$acc kernels default(present) async(1)
     !$OMP PARALLEL WORKSHARE
@@ -114,9 +159,21 @@ module mod_rk
     !$OMP END PARALLEL WORKSHARE
     !$acc end kernels
 #if !defined(_IMPDIFF)
-    call momx_d(n(1),n(2),n(3),dli(1),dli(2),dzci,dzfi,visc,u,dudtrk)
-    call momy_d(n(1),n(2),n(3),dli(1),dli(2),dzci,dzfi,visc,v,dvdtrk)
-    call momz_d(n(1),n(2),n(3),dli(1),dli(2),dzci,dzfi,visc,w,dwdtrk)
+    call momx_d(n(1),n(2),n(3),dli(1),dli(2),dzci,dzfi,visc,u, &
+#if defined(_IBM)
+                    psi_u,psi_v,psi_w, &
+#endif
+                    dudtrk)
+    call momy_d(n(1),n(2),n(3),dli(1),dli(2),dzci,dzfi,visc,v, &
+#if defined(_IBM)
+                    psi_u,psi_v,psi_w, &
+#endif
+                    dvdtrk)
+    call momz_d(n(1),n(2),n(3),dli(1),dli(2),dzci,dzfi,visc,w, &
+#if defined(_IBM)
+                    psi_u,psi_v,psi_w, &
+#endif
+                    dwdtrk)
 #else
     !$acc kernels default(present) async(1)
     !$OMP PARALLEL WORKSHARE
@@ -126,9 +183,22 @@ module mod_rk
     !$OMP END PARALLEL WORKSHARE
     !$acc end kernels
 #if !defined(_IMPDIFF_1D)
-    call momx_d(n(1),n(2),n(3),dli(1),dli(2),dzci,dzfi,visc,u,dudtrkd)
-    call momy_d(n(1),n(2),n(3),dli(1),dli(2),dzci,dzfi,visc,v,dvdtrkd)
-    call momz_d(n(1),n(2),n(3),dli(1),dli(2),dzci,dzfi,visc,w,dwdtrkd)
+    call momx_d(n(1),n(2),n(3),dli(1),dli(2),dzci,dzfi,visc,u,
+     &
+#if defined(_IBM)
+                    psi_u,psi_v,psi_w, &
+#endif
+                    dudtrkd)
+    call momy_d(n(1),n(2),n(3),dli(1),dli(2),dzci,dzfi,visc,v, &
+#if defined(_IBM)
+                    psi_u,psi_v,psi_w, &
+#endif
+                    dvdtrkd)
+    call momz_d(n(1),n(2),n(3),dli(1),dli(2),dzci,dzfi,visc,w, &
+#if defined(_IBM)
+                    psi_u,psi_v,psi_w, &
+#endif
+                    dwdtrkd)
 #else
     call momx_d_xy(n(1),n(2),n(3),dli(1),dli(2),visc,u,dudtrk )
     call momy_d_xy(n(1),n(2),n(3),dli(1),dli(2),visc,v,dvdtrk )
@@ -138,9 +208,21 @@ module mod_rk
     call momz_d_z( n(1),n(2),n(3),dzci  ,dzfi  ,visc,w,dwdtrkd)
 #endif
 #endif
-    call momx_a(n(1),n(2),n(3),dli(1),dli(2),dzfi,u,v,w,dudtrk)
-    call momy_a(n(1),n(2),n(3),dli(1),dli(2),dzfi,u,v,w,dvdtrk)
-    call momz_a(n(1),n(2),n(3),dli(1),dli(2),dzci,u,v,w,dwdtrk)
+    call momx_a(n(1),n(2),n(3),dli(1),dli(2),dzfi,u,v,w, &
+#if defined(_IBM)
+                psi_u,psi_v,psi_w, &
+#endif
+                dudtrk)
+    call momy_a(n(1),n(2),n(3),dli(1),dli(2),dzfi,u,v,w, &
+#if defined(_IBM)
+                psi_u,psi_v,psi_w, &
+#endif
+                dvdtrk)
+    call momz_a(n(1),n(2),n(3),dli(1),dli(2),dzci,u,v,w, &
+#if defined(_IBM)
+                psi_u,psi_v,psi_w, &
+#endif
+                dwdtrk)
 #endif
     !
     !$acc parallel loop collapse(3) default(present) async(1)
@@ -217,9 +299,16 @@ module mod_rk
     end do
 #endif
     !
+    call grav_src(n(1),n(2),n(3), &
+#if defined(_HEAT_TRANSFER)
+                  s, &
+#endif
+                  dudtrk,dvdtrk,dwdtrk)
+    !
     ! bulk velocity forcing
     !
     f(:) = 0.
+#if !defined(_IBM)
     if(is_forced(1)) then
       call bulk_mean(n,grid_vol_ratio_f,u,mean)
       f(1) = velf(1) - mean
@@ -232,6 +321,23 @@ module mod_rk
       call bulk_mean(n,grid_vol_ratio_c,w,mean)
       f(3) = velf(3) - mean
     end if
+#else
+    if(is_forced(1)) then
+      call force_bulk_vel(n,1,zc,zf,dl,dzf,l,psi_u,u,velf(1),f(1))
+    endif
+    if(is_forced(2)) then
+      call force_bulk_vel(n,2,zc,zf,dl,dzf,l,psi_v,v,velf(2),f(2))
+    endif
+    if(is_forced(3)) then
+      call force_bulk_vel(n,3,zc,zf,dl,dzc,l,psi_w,w,velf(3),f(3))
+    endif
+#endif
+#if defined(_IBM)
+    !
+    ! IBM forcing
+    !
+  call force_vel(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fibm)
+#endif
 #if defined(_IMPDIFF)
     !
     ! compute rhs of helmholtz equation
@@ -250,28 +356,64 @@ module mod_rk
     end do
 #endif
   end subroutine rk
-  subroutine rk_scal(rkpar,n,dli,dzci,dzfi,visc,dt,u,v,w,dsdtrko,s)
+  subroutine rk_scal(rkpar,n,dli,dzci,dzfi,alph_f,alph_s,dt,l,u,v,w, &
+#if defined(_IBM)
+                     dl,dzc,dzf, &
+                     psi, &
+#if defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
+                     fibm, &
+#endif
+#endif
+                     s)
     !
     ! low-storage 3rd-order Runge-Kutta scheme
     ! for time integration of the scalar field.
     !
     implicit none
-    real(rp), intent(in   ), dimension(2) :: rkpar
-    integer , intent(in   ), dimension(3) :: n
-    real(rp), intent(in   ), dimension(3) :: dli
+    real(rp), intent(in   ), dimension(2)  :: rkpar
+    integer , intent(in   ), dimension(3)  :: n
+    real(rp), intent(in   ), dimension(3)  :: dli,l
     real(rp), intent(in   ), dimension(0:) :: dzci,dzfi
-    real(rp), intent(in   ) :: visc,dt
+#if defined(_IBM)
+    real(rp), intent(in   ), dimension(3)  :: dl
+    real(rp), intent(in   ), dimension(0:) :: dzc,dzf
+#endif
+    real(rp), intent(in   ) :: alph_f,alph_s,dt
     real(rp), intent(in   ), dimension(0:,0:,0:) :: u,v,w
-    real(rp), intent(inout), dimension(:,:,:) :: dsdtrko
     real(rp), intent(inout), dimension(0:,0:,0:) :: s
-    real(rp),              dimension(n(1),n(2),n(3)) :: dsdtrk
-    real(rp) :: factor1,factor2,factor12
+    real(rp), target     , allocatable, dimension(:,:,:), save :: dsdtrk_t, dsdtrko_t
+    real(rp), pointer    , contiguous , dimension(:,:,:), save :: dsdtrk, dsdtrko
+    real(rp) :: factor1,factor2
+#if defined(_IBM)
+    real(rp), intent(in   ), dimension(0:,0:,0:) :: psi
+#if defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
+    real(rp), intent(out  ), dimension(4) :: fibm
+#endif
+#endif
     integer :: i,j,k
+    logical, save :: is_first = .true.
     !
     factor1 = rkpar(1)*dt
     factor2 = rkpar(2)*dt
-    factor12 = factor1 + factor2
-    call scal(n(1),n(2),n(3),dli(1),dli(2),dli(3),dzci,dzfi,visc,u,v,w,s,dsdtrk)
+    !
+    ! initialization
+    !
+    if(is_first) then ! leverage save attribute to allocate these arrays on the device only once
+      is_first = .false.
+      allocate(dsdtrk_t( n(1),n(2),n(3)),dsdtrko_t(n(1),n(2),n(3)))
+      !$acc enter data create(dsdtrk_t, dsdtrko_t) async(1)
+      !$acc kernels default(present) async(1)
+      dsdtrko_t(:,:,:) = 0._rp
+      !$acc end kernels
+      dsdtrk  => dsdtrk_t
+      dsdtrko => dsdtrko_t
+    end if
+    !
+    call scal(n(1),n(2),n(3),dli(1),dli(2),dli(3),dzci,dzfi,alph_f,alph_s, &
+#if defined(_IBM)
+              psi, &
+#endif
+              u,v,w,s,dsdtrk)
     !$acc parallel loop collapse(3) default(present) async(1)
     !$OMP PARALLEL DO DEFAULT(none) &
     !$OMP SHARED(n,factor1,factor2,s,dsdtrk,dsdtrko)
@@ -279,9 +421,15 @@ module mod_rk
       do j=1,n(2)
         do i=1,n(1)
           s(i,j,k) = s(i,j,k) + factor1*dsdtrk(i,j,k) + factor2*dsdtrko(i,j,k)
-          dsdtrko(i,j,k) = dsdtrk(i,j,k)
         end do
       end do
     end do
+    call swap(dsdtrk,dsdtrko)
+#if defined(_IBM) && defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
+    !
+    ! IBM forcing
+    !
+    call force_scal(n,dl,dzc,l,psi,s,fibm)
+#endif
   end subroutine rk_scal
 end module mod_rk

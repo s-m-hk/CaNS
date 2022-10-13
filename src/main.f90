@@ -39,17 +39,33 @@ program cans
   use mod_correc         , only: correc
   use mod_fft            , only: fftini,fftend
   use mod_fillps         , only: fillps
-  use mod_initflow       , only: initflow
+#if defined(_IBM)
+  use mod_forcing    , only: bulk_mean_ibm, force_vel
+#endif
+#if defined(_HEAT_TRANSFER)
+  use mod_initflow   , only: initflow, inittmp
+#else
+  use mod_initflow   , only: initflow
+#endif
   use mod_initgrid       , only: initgrid
   use mod_initmpi        , only: initmpi
   use mod_initsolver     , only: initsolver
   use mod_load           , only: load
-  use mod_rk             , only: rk
+  use mod_rk             , only: rk,rk_scal
   use mod_output         , only: out0d,out1d,out1d_chan,out2d,out3d,write_log_output,write_visu_2d,write_visu_3d
   use mod_param          , only: lz,uref,lref,rey,visc,small, &
+#if defined(_HEAT_TRANSFER)
+                                 itmp,tg0,alph_f,alph_s,cbctmp,bctmp, &
+#if defined(_BOUSSINESQ)
+                                 tmp0,beta_th, &
+#endif
+#if defined(_SIMPLE)
+                                 solidtemp, &
+#endif
+#endif
                                  nb,is_bound,cbcvel,bcvel,cbcpre,bcpre, &
-                                 icheck,iout0d,iout1d,iout2d,iout3d,isave, &
-                                 nstep,time_max,tw_max,stop_type,restart,is_overwrite_save,nsaves_max, &
+                                 ioutput,icheck,iout0d,iout1d,iout2d,iout3d,ioutLPP,isave, &
+                                 nstep,time_max,tw_max,stop_type,restart,is_overwrite_save,reset_time,nsaves_max, &
                                  rkcoeff,   &
                                  datadir,   &
                                  cfl,dtmin, &
@@ -58,7 +74,8 @@ program cans
                                  gr, &
                                  is_forced,velf,bforce, &
                                  ng,l,dl,dli, &
-                                 read_input
+                                 read_input, &
+                                 height_map
   use mod_sanity         , only: test_sanity_input,test_sanity_solver
 #if !defined(_OPENACC)
   use mod_solver         , only: solver
@@ -78,10 +95,21 @@ program cans
   use mod_utils          , only: bulk_mean
   !@acc use mod_utils    , only: device_memory_footprint
   use mod_types
+#if defined(_IBM)
+  use mod_initIBM
+  use mod_IBM
+#endif
+#if defined(_LPP)
+  use mod_lag_part       , only: initLPP,SeedParticles,boundlpp,lppsweeps,ComputeSubDerivativeVel,outLPP, &
+                                 StorePartOld,AveragePartSol
+#endif
   use omp_lib
   implicit none
   integer , dimension(3) :: lo,hi,n,n_x_fft,n_y_fft,lo_z,hi_z,n_z
   real(rp), allocatable, dimension(:,:,:) :: u,v,w,p,pp
+#if defined(_HEAT_TRANSFER)
+  real(rp), dimension(:,:,:)  , allocatable :: s
+#endif
   real(rp), dimension(3) :: tauxo,tauyo,tauzo
   real(rp), dimension(3) :: f
 #if !defined(_OPENACC)
@@ -128,9 +156,21 @@ program cans
   character(len=7  ) :: fldnum
   character(len=4  ) :: chkptnum
   character(len=100) :: filename
-  integer :: k,kk
+  integer :: i,ii,j,jj,k,kk
   logical :: is_done,kill
   integer :: rlen
+#if defined(_IBM)
+  real(rp), dimension(:,:,:),   allocatable :: psi_u,psi_v,psi_w,psi
+  integer,  dimension(:,:,:),   allocatable :: marker
+  integer,  dimension(:,:,:),   allocatable :: i_mirror,j_mirror,k_mirror,i_IP1,j_IP1,k_IP1,i_IP2,j_IP2,k_IP2
+  real(rp), dimension(:,:,:),   allocatable :: nx_surf,ny_surf,nz_surf,nabs_surf,deltan
+  real(rp), dimension(:,:,:,:), allocatable :: WP1,WP2
+  real(rp), dimension(:,:),     allocatable :: surf_z,surf_height
+  real(rp), dimension(4) :: fibm,fibmtot
+#endif
+#if defined(_LPP)
+  real(rp), dimension(:,:,:), allocatable :: duconv,dvconv,dwconv
+#endif
   !
   call MPI_INIT(ierr)
   call MPI_COMM_RANK(MPI_COMM_WORLD,myid,ierr)
@@ -153,6 +193,9 @@ program cans
            w( 0:n(1)+1,0:n(2)+1,0:n(3)+1), &
            p( 0:n(1)+1,0:n(2)+1,0:n(3)+1), &
            pp(0:n(1)+1,0:n(2)+1,0:n(3)+1))
+#if defined(_HEAT_TRANSFER)
+  allocate(s( 0:n(1)+1,0:n(2)+1,0:n(3)+1))
+#endif
   allocate(lambdaxyp(n_z(1),n_z(2)))
   allocate(ap(n_z(3)),bp(n_z(3)),cp(n_z(3)))
   allocate(dzc( 0:n(3)+1), &
@@ -194,6 +237,57 @@ program cans
            rhsby(  n(1),n(3),0:1), &
            rhsbz(  n(1),n(2),0:1))
 #endif
+#if defined(_IBM)
+  allocate(psi_u(0:n(1)+1,0:n(2)+1,0:n(3)+1), &
+           psi_v(0:n(1)+1,0:n(2)+1,0:n(3)+1), &
+           psi_w(0:n(1)+1,0:n(2)+1,0:n(3)+1), &
+           psi(0:n(1)+1,0:n(2)+1,0:n(3)+1), &
+           marker(0:n(1)+1,0:n(2)+1,0:n(3)+1))
+#if defined(_IBM_BC)
+  allocate(    psi_u(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
+               psi_v(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
+               psi_w(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
+                 psi(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
+              marker(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
+            i_mirror(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
+            j_mirror(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
+            k_mirror(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
+               i_IP1(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
+               j_IP1(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
+               k_IP1(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
+               i_IP2(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
+               j_IP2(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
+               k_IP2(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
+             nx_surf(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
+             ny_surf(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
+             nz_surf(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
+           nabs_surf(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
+              deltan(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
+             WP1(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6,1:7), &
+             WP2(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6,1:7)   )
+#endif
+  if(height_map)then !Read surface height-map and divide it among subdomains
+     allocate(surf_z(1:ng(1),1:ng(2)))
+     allocate(surf_height(1:n(1),1:n(2)))
+     open(unit=3,file='k.dat',status='old',action='read')
+     read(3,*) ((surf_z(i,j), i=1,ng(1)), j=1,ng(2))
+     close(3)
+     do j=1,n(2)
+        jj=(j+lo(2)-1)
+       do i=1,n(1)
+          ii=(i+lo(1)-1)
+          surf_height(i,j) = surf_z(ii,jj)
+       enddo
+     enddo
+     deallocate(surf_z)
+  endif
+  !$acc enter data copyin(surf_height) async
+#endif
+#if defined(_LPP)
+allocate(duconv(n(1),n(2),n(3)), &
+         dvconv(n(1),n(2),n(3)), &
+         dwconv(n(1),n(2),n(3)))
+#endif
 #if defined(_DEBUG)
   if(myid == 0) print*, 'This executable of CaNS was built with compiler: ', compiler_version()
   if(myid == 0) print*, 'Using the options: ', compiler_options()
@@ -210,6 +304,7 @@ program cans
   if(myid == 0) print*, '*******************************'
   if(myid == 0) print*, ''
   call initgrid(inivel,ng(3),gr,lz,dzc_g,dzf_g,zc_g,zf_g)
+  l(3) = lz
   if(myid == 0) then
     inquire(iolength=rlen) 1._rp
     open(99,file=trim(datadir)//'grid.bin',access='direct',recl=4*ng(3)*rlen)
@@ -310,28 +405,96 @@ program cans
     time = 0.
     !$acc update self(zc,dzc,dzf)
     call initflow(inivel,ng,lo,zc/lz,dzc/lz,dzf/lz,visc,u,v,w,p)
-    if(myid == 0) print*, '*** Initial condition succesfully set ***'
+#if defined(_HEAT_TRANSFER)
+    call inittmp(itmp,n(1),n(2),n(3),s)
+#endif
+    if(myid == 0) print*, '*** Initial condition successfully set ***'
   else
-    call load('r',trim(datadir)//'fld.bin',MPI_COMM_WORLD,ng,[1,1,1],lo,hi,u,v,w,p,time,istep)
+#if defined(_HEAT_TRANSFER)
+    call load('r',trim(datadir)//'fld.bin',MPI_COMM_WORLD,ng,[1,1,1],lo,hi,time,istep,u,v,w,p,s)
+#else
+    call load('r',trim(datadir)//'fld.bin',MPI_COMM_WORLD,ng,[1,1,1],lo,hi,time,istep,u,v,w,p)
+#endif
     if(myid == 0) print*, '*** Checkpoint loaded at time = ', time, 'time step = ', istep, '. ***'
   end if
+
+#if defined(_IBM)
+!$acc update self(lo,hi,n,zc,zf,dzc,dzf,dzci,dzfi,dl,dli,l)
+  if(myid == 0) print*, '*** Initializing IBM ***'
+#if defined(_IBM_BC)
+  call initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,ng,nb,lo,hi,psi_u,psi_v,psi_w,psi,marker, &
+               surf_height, &
+               0,zc,zf,zf_g,dzc,dzf,dl,dli, &
+               nx_surf,ny_surf,nz_surf,nabs_surf,i_mirror,j_mirror,k_mirror, &
+               i_IP1,j_IP1,k_IP1,i_IP2,j_IP2,k_IP2,WP1,WP2,deltan)
+#else
+#if defined(_VOLUME)
+  call initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,ng,nb,lo,hi,psi_u,psi_v,psi_w,psi,marker, &
+               surf_height, &
+               0,zc,zf,zf_g,dzc,dzf,dl,dli)
+#endif
+#if defined(_SIMPLE)
+  call initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,ng,nb,lo,hi,psi_u,psi_v,psi_w,psi, &
+               0,zc,zf,zf_g,dzc,dzf,dl,dli)
+#endif
+#endif
+  !
+  ! output solid volume fractions
+  !
+  !$acc update self(psi_u,psi_v,psi_w,psi)
+  call out1d(trim(datadir)//'psi_u.out',ng,lo,hi,3,l,dl,zc_g,dzf,psi_u)
+  call out1d(trim(datadir)//'psi_v.out',ng,lo,hi,3,l,dl,zc_g,dzf,psi_v)
+  call out1d(trim(datadir)//'psi_w.out',ng,lo,hi,3,l,dl,zc_g,dzf,psi_w)
+  call out1d(trim(datadir)//'psi.out'  ,ng,lo,hi,3,l,dl,zc_g,dzf,psi  )
+  if(myid == 0) print*, '*** IBM Initialized ***'
+#endif
+
   !$acc enter data copyin(u,v,w,p) create(pp)
+#if defined(_HEAT_TRANSFER)
+  !$acc enter data copyin(s)
+#endif
+#if defined(_IBM)
+  !
+  ! Apply IBM forcing to impose zero velocity in IB regions for initial condition
+  !
+  call force_vel(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fibm)
+#endif
   call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,u,v,w)
+#if defined(_HEAT_TRANSFER)
+  call boundp(cbctmp,n,bctmp,nb,is_bound,dl,dzc,s)
+#endif
   call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,p)
   !
   ! post-process and write initial condition
   !
   write(fldnum,'(i7.7)') istep
   !$acc update self(u,v,w,p)
+#if defined(_HEAT_TRANSFER)
+  !$acc update self(s)
+#endif
   include 'out1d.h90'
   include 'out2d.h90'
   include 'out3d.h90'
+#if defined(_IBM)
+  !$acc update self(psi)
+  call write_visu_3d(datadir,'psi_fld_'//fldnum//'.bin','log_visu_3d.out','Solid_Psi', &
+                     (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
+                     psi(1:n(1),1:n(2),1:n(3)))
+#endif
   !
   call chkdt(n,dl,dzci,dzfi,visc,u,v,w,dtmax)
   dt = min(cfl*dtmax,dtmin)
   if(myid == 0) print*, 'dtmax = ', dtmax, 'dt = ',dt
   dti = 1./dt
   kill = .false.
+#if defined(_LPP)
+  if(myid == 0) print*, '*** Initializing Lagrangian point particles ***'
+  call initLPP(zc(0),zc(ng(3)),dzc,n,ng)
+  call SeedParticles(u,v,w,time,dt,zc,zf,n,ng)
+  call boundlpp(n,ng)
+  if(myid == 0) print*, '****** Lagrangian point particles Initialized ******'
+  call outLPP(istep,time,0,ng(1),0,ng(2),0,ng(3))
+#endif
   !
   ! main loop
   !
@@ -344,16 +507,45 @@ program cans
 #endif
     istep = istep + 1
     time = time + dt
-    if(myid == 0) print*, 'Time step #', istep, 'Time = ', time
+    if(mod(istep,ioutput) == 0 .and. myid == 0) print*, 'Time step #', istep, 'Time = ', time
     dpdl(:)  = 0.
     tauxo(:) = 0.
     tauyo(:) = 0.
     tauzo(:) = 0.
+#if defined(_IBM)
+    fibmtot(:) = 0.
+#endif
     do irk=1,3
       dtrk = sum(rkcoeff(:,irk))*dt
       dtrki = dtrk**(-1)
-      call rk(rkcoeff(:,irk),n,dli,l,dzci,dzfi,grid_vol_ratio_c,grid_vol_ratio_f,visc,dt,p, &
-              is_bound,is_forced,velf,bforce,tauxo,tauyo,tauzo,u,v,w,f)
+#if defined(_HEAT_TRANSFER)
+      call rk_scal(rkcoeff(:,irk),n,dli,dzci,dzfi,alph_f,alph_s,dt,l,u,v,w, &
+#if defined(_IBM)
+                   dl,dzc,dzf, &
+                   psi, &
+#if defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
+                   fibm, &
+#endif
+#endif
+                   s)
+#endif
+#if defined(_IBM) && defined(_SIMPLE)
+      ! call force_vel(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fibm)
+#endif
+      call rk(rkcoeff(:,irk),n,dli,l,zc,zf,dzci,dzfi,grid_vol_ratio_c,grid_vol_ratio_f,visc,dt,p, &
+              is_bound,is_forced,velf,bforce,tauxo,tauyo,tauzo,u,v,w, &
+#if defined(_IBM)
+              dl,dzc,dzf, &
+              psi_u,psi_v,psi_w, &
+              fibm, &
+#endif
+#if defined(_HEAT_TRANSFER)
+              s, &
+#endif
+#if defined(_LPP)
+              duconv,dvconv,dwconv, &
+#endif
+              f)
       block
         real(rp) :: ff
         if(is_forced(1)) then
@@ -374,6 +566,19 @@ program cans
           w(1:n(1),1:n(2),1:n(3)) = w(1:n(1),1:n(2),1:n(3)) + ff
           !$acc end kernels
         end if
+#if defined(_HEAT_TRANSFER)
+        if(is_forced(4)) then
+          if (velf(1).ne.0.) then
+           ff = velf(1)
+          else
+           call bulk_mean(n,grid_vol_ratio_f,u,meanvelu)
+           ff = meanvelu
+          endif
+          !$acc kernels default(present) async(1)
+          s(1:n(1),1:n(2),1:n(3)) = s(1:n(1),1:n(2),1:n(3)) + u(1:n(1),1:n(2),1:n(3))/ff
+          !$acc end kernels
+        endif
+#endif
       end block
 #if defined(_IMPDIFF)
       alpha = -.5*visc*dtrk
@@ -454,6 +659,9 @@ program cans
 #endif
 #endif
       dpdl(:) = dpdl(:) + f(:)
+#if defined(_HEAT_TRANSFER)
+      call boundp(cbctmp,n,bctmp,nb,is_bound,dl,dzc,s)
+#endif
       call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,u,v,w)
       call fillps(n,dli,dzfi,dtrki,u,v,w,pp)
       call updt_rhs_b(['c','c','c'],cbcpre,n,is_bound,rhsbp%x,rhsbp%y,rhsbp%z,pp)
@@ -465,6 +673,9 @@ program cans
       call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,p)
     end do
     dpdl(:) = -dpdl(:)*dti
+#if defined(_IBM)
+    fibmtot(:) = fibmtot(:)*dti
+#endif
     !
     ! check simulation stopping criteria
     !
@@ -483,12 +694,12 @@ program cans
       call chkdt(n,dl,dzci,dzfi,visc,u,v,w,dtmax)
       dt  = min(cfl*dtmax,dtmin)
       if(myid == 0) print*, 'dtmax = ', dtmax, 'dt = ',dt
-      if(dtmax < small) then
-        if(myid == 0) print*, 'ERROR: time step is too small.'
-        if(myid == 0) print*, 'Aborting...'
-        is_done = .true.
-        kill = .true.
-      end if
+      ! if(dtmax < small) then
+        ! if(myid == 0) print*, 'ERROR: time step is too small.'
+        ! if(myid == 0) print*, 'Aborting...'
+        ! is_done = .true.
+        ! kill = .true.
+      ! end if
       dti = 1./dt
       call chkdiv(lo,hi,dli,dzfi,u,v,w,divtot,divmax)
       if(myid == 0) print*, 'Total divergence = ', divtot, '| Maximum divergence = ', divmax
@@ -515,6 +726,7 @@ program cans
         meanvelu = 0.
         meanvelv = 0.
         meanvelw = 0.
+#if !defined(_IBM)
         if(is_forced(1).or.abs(bforce(1)) > 0.) then
           call bulk_mean(n,grid_vol_ratio_f,u,meanvelu)
         end if
@@ -524,26 +736,56 @@ program cans
         if(is_forced(3).or.abs(bforce(3)) > 0.) then
           call bulk_mean(n,grid_vol_ratio_c,w,meanvelw)
         end if
+#else
+        if(is_forced(1).or.abs(bforce(1)).gt.0.) then
+          call bulk_mean_ibm(n,1,dl,dzf,l,psi_u,u,meanvelu)
+        endif
+        if(is_forced(2).or.abs(bforce(2)).gt.0.) then
+          call bulk_mean_ibm(n,2,dl,dzf,l,psi_v,v,meanvelv)
+        endif
+        if(is_forced(3).or.abs(bforce(3)).gt.0.) then
+          call bulk_mean_ibm(n,3,dl,dzc,l,psi_w,w,meanvelw)
+        endif
+#endif
         if(.not.any(is_forced(:))) dpdl(:) = -bforce(:) ! constant pressure gradient
         var(1)   = time
         var(2:4) = dpdl(1:3)
         var(5:7) = [meanvelu,meanvelv,meanvelw]
         call out0d(trim(datadir)//'forcing.out',7,var)
       end if
+#if defined(_IBM)
+      var(1)   = time
+      var(2:4) = fibmtot(1:3)
+      call out0d(trim(datadir)//'forcing_ibm.out',4,var)
+#endif
     end if
     write(fldnum,'(i7.7)') istep
     if(mod(istep,iout1d) == 0) then
       !$acc update self(u,v,w,p)
+#if defined(_HEAT_TRANSFER)
+      !$acc update self(s)
+#endif
       include 'out1d.h90'
     end if
     if(mod(istep,iout2d) == 0) then
       !$acc update self(u,v,w,p)
+#if defined(_HEAT_TRANSFER)
+      !$acc update self(s)
+#endif
       include 'out2d.h90'
     end if
     if(mod(istep,iout3d) == 0) then
       !$acc update self(u,v,w,p)
+#if defined(_HEAT_TRANSFER)
+      !$acc update self(s)
+#endif
       include 'out3d.h90'
     end if
+#if defined(_LPP)
+    if(mod(istep,ioutLPP) == 0) then
+      call outLPP(istep,time,0,ng(1),0,ng(2),0,ng(3))
+    endif
+#endif
     if(mod(istep,isave ) == 0.or.(is_done.and..not.kill)) then
       if(is_overwrite_save) then
         filename = 'fld.bin'
@@ -560,8 +802,13 @@ program cans
           call out0d(trim(datadir)//'log_checkpoints.out',3,var)
         end if
       end if
+#if defined(_HEAT_TRANSFER)
+      !$acc update self(u,v,w,p,s)
+      call load('w',trim(datadir)//trim(filename),MPI_COMM_WORLD,ng,[1,1,1],lo,hi,time,istep,u,v,w,p,s)
+#else
       !$acc update self(u,v,w,p)
-      call load('w',trim(datadir)//trim(filename),MPI_COMM_WORLD,ng,[1,1,1],lo,hi,u,v,w,p,time,istep)
+      call load('w',trim(datadir)//trim(filename),MPI_COMM_WORLD,ng,[1,1,1],lo,hi,time,istep,u,v,w,p)
+#endif
       if(.not.is_overwrite_save) then
         !
         ! fld.bin -> last checkpoint file (symbolic link)
@@ -576,8 +823,8 @@ program cans
       call MPI_ALLREDUCE(dt12,dt12av ,1,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
       call MPI_ALLREDUCE(dt12,dt12min,1,MPI_REAL_RP,MPI_MIN,MPI_COMM_WORLD,ierr)
       call MPI_ALLREDUCE(dt12,dt12max,1,MPI_REAL_RP,MPI_MAX,MPI_COMM_WORLD,ierr)
-      if(myid == 0) print*, 'Avrg, min & max elapsed time: '
-      if(myid == 0) print*, dt12av/(1.*product(dims)),dt12min,dt12max
+      if(mod(istep,ioutput) == 0 .and. myid == 0) print*, 'Avrg, min & max elapsed time: '
+      if(mod(istep,ioutput) == 0 .and. myid == 0) print*, dt12av/(1.*product(dims)),dt12min,dt12max
 #endif
   end do
   !
@@ -589,7 +836,7 @@ program cans
   call fftend(arrplanv)
   call fftend(arrplanw)
 #endif
-  if(myid == 0.and.(.not.kill)) print*, '*** Fim ***'
+  if(myid == 0.and.(.not.kill)) print*, '*** Finished ***'
   call decomp_2d_finalize
   call MPI_FINALIZE(ierr)
 end program cans
