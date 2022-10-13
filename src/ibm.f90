@@ -36,13 +36,17 @@ implicit none
 integer ,intent(in), dimension(3) :: n,ng,lo,hi
 real(rp),intent(in), dimension(0:) :: zc,zf,zf_g,dzc,dzf
 real(rp),intent(out),dimension(0:,0:,0:) :: cell_phi_tag
-real(rp)::xxx,yyy,zzz
+real(rp)::xxx,yyy,zzz,ratio
 integer i,j,k,nz
 logical :: ghost
-nz = ng(3)
-
+nz = n(3)
+#if !defined(_DECOMP_Z)
+ratio = 1.
+#else
+ratio = solid_height_ratio
+#endif
 if(trim(surface_type) == 'Lattice') then
-do k=1,int(solid_height_ratio*(nz+1))
+do k=1,int(ratio*nz)
  do j=1,n(2)
   do i=1,n(1)
      xxx = (i+lo(1)-1-.5)*dx
@@ -80,7 +84,7 @@ real(rp), allocatable, dimension(:,:,:) :: tmp_x,tmp_y,tmp_z
 integer i,j,k,l,nn,m,number_of_divisions
 real(rp):: xxx,yyy,zzz,dxx,dyy,dzz,dxl,dyl
 real(rp):: cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z
-real(rp):: counter
+real(rp):: counter,ratio
 logical :: inside,ghost
 integer, dimension(3) :: nh
 integer :: kk,nz
@@ -92,6 +96,11 @@ nh(1:3) = 6
 #else
 nh(1:3) = 1
 #endif
+#if !defined(_DECOMP_Z)
+ratio = 1.
+#else
+ratio = solid_height_ratio
+#endif
 !$acc enter data create(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
 ! Wall Geometry
 #if !defined(_GPU)
@@ -102,7 +111,7 @@ number_of_divisions = 100
 if (myid == 0) print*, '*** Calculating volume fractions ***'
 if(trim(surface_type) == 'HeightMap') then !Only calculate volume fractions in the staggered control volumes separately if a geometric function is used to define the solid, otherwise the cell-center calculated volume fraction should be interpolated onto the face centers.
 !$acc parallel loop gang collapse(3) default(present) private(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
-do k=1,int(solid_height_ratio*nz) ! Lower wall
+do k=1,int(ratio*nz) ! Lower wall
   ! if (myid == 0) print*, '*** Calculating volume fractions at k = ', k
   do j=1,n(2)
     do i=1,n(1)
@@ -154,7 +163,7 @@ do k=1,int(solid_height_ratio*nz) ! Lower wall
   enddo
 enddo
 !$acc parallel loop gang collapse(3) default(present) private(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
-do k=nz,(nz-int(solid_height_ratio*nz)),-1 ! Upper wall
+do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
   do j=1,n(2)
     do i=1,n(1)
       xxx = (i+lo(1)-1-.5)*dxl
@@ -208,7 +217,7 @@ enddo
 else ! Objects generated using functions
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !$acc parallel loop gang collapse(3) default(present) private(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
-do k=1,int(solid_height_ratio*nz) ! Lower wall
+do k=1,int(ratio*nz) ! Lower wall
   do j=1,n(2)
     do i=1,n(1)
       xxx = (i+lo(1)-1-.5)*dx
@@ -379,7 +388,7 @@ do k=1,int(solid_height_ratio*nz) ! Lower wall
 enddo
 !
 !$acc parallel loop gang collapse(3) default(present) private(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
-do k=nz,(nz-int(solid_height_ratio*nz)),-1 ! Upper wall
+do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
   do j=1,n(2)
     do i=1,n(1)
       xxx = (i+lo(1)-1-.5)*dx
@@ -553,7 +562,7 @@ endif
 
 if(trim(surface_type) == 'HeightMap') then
 !$acc parallel loop gang collapse(3) default(present) async(1)
-do k=1,int(solid_height_ratio*nz)
+do k=1,int(ratio*nz)
   do j=1,n(2)-1
     do i=1,n(1)-1
      cell_u_tag(i,j,k) = 0.5*(cell_phi_tag(i+1,j,k)+cell_phi_tag(i,j,k))
@@ -645,7 +654,7 @@ endif
 !#else
 ! kk = 1
 !$acc parallel loop gang default(present) async(1)
-! do k = nz,(nz-int(solid_height_ratio*nz)),-1
+! do k = nz,(nz-int(ratio*nz)),-1
        ! cell_phi_tag(1:n(1),1:n(2),k) = cell_phi_tag(1:n(1),1:n(2),kk)
 	   ! cell_u_tag(1:n(1),1:n(2),k)   = cell_u_tag(1:n(1),1:n(2),kk)
 	   ! cell_v_tag(1:n(1),1:n(2),k)   = cell_v_tag(1:n(1),1:n(2),kk)

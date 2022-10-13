@@ -138,12 +138,6 @@ module mod_rk
 #endif
     end if
     !
-#if defined(_IBM) && defined(_SIMPLE)
-    !
-    ! IBM forcing
-    !
-  call force_vel(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fibm)
-#endif
 #if defined(_FAST_MOM_KERNELS)
     call mom_xyz_ad(n(1),n(2),n(3),dli(1),dli(2),dzci,dzfi,visc,u,v,w,dudtrk,dvdtrk,dwdtrk,dudtrkd,dvdtrkd,dwdtrkd &
 #if defined(_IBM) && defined(_SIMPLE)

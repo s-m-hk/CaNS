@@ -56,21 +56,17 @@ module mod_forcing
           u(i,j,k) = u(i,j,k) + fx
           v(i,j,k) = v(i,j,k) + fy
           w(i,j,k) = w(i,j,k) + fz
-#if defined(_VOLUME)
           fxtot = fxtot + fx*dx*dy*dzf(k)
           fytot = fytot + fy*dx*dy*dzf(k)
           fztot = fztot + fz*dx*dy*dzc(k)
-#endif
         enddo
       enddo
     enddo
     !$acc wait(1)
-#if defined(_VOLUME)
     f(1) = fxtot/(l(1)*l(2)*l(3))
     f(2) = fytot/(l(1)*l(2)*l(3))
     f(3) = fztot/(l(1)*l(2)*l(3))
     call mpi_allreduce(MPI_IN_PLACE,f(1),3,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-#endif
   end subroutine force_vel
   !
   subroutine force_scal(n,dl,dz,l,psi,s,f)
