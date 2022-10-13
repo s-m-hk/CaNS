@@ -476,10 +476,19 @@ allocate(duconv(n(1),n(2),n(3)), &
   include 'out2d.h90'
   include 'out3d.h90'
 #if defined(_IBM)
-  !$acc update self(psi)
-  call write_visu_3d(datadir,'psi_fld_'//fldnum//'.bin','log_visu_3d.out','Solid_Psi', &
+  !$acc update self(psi,psi_u,psi_v,psi_w)
+  call write_visu_3d(datadir,'psis_fld_'//fldnum//'.bin','log_visu_3d.out','Solid_Psi_s', &
                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
                      psi(1:n(1),1:n(2),1:n(3)))
+  call write_visu_3d(datadir,'psiu_fld_'//fldnum//'.bin','log_visu_3d.out','Solid_Psi_u', &
+                     (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
+                     psi_u(1:n(1),1:n(2),1:n(3)))
+  call write_visu_3d(datadir,'psiv_fld_'//fldnum//'.bin','log_visu_3d.out','Solid_Psi_v', &
+                     (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
+                     psi_v(1:n(1),1:n(2),1:n(3)))
+  call write_visu_3d(datadir,'psiw_fld_'//fldnum//'.bin','log_visu_3d.out','Solid_Psi_w', &
+                     (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
+                     psi_w(1:n(1),1:n(2),1:n(3)))
 #endif
   !
   call chkdt(n,dl,dzci,dzfi,visc,u,v,w,dtmax)
@@ -528,9 +537,6 @@ allocate(duconv(n(1),n(2),n(3)), &
 #endif
 #endif
                    s)
-#endif
-#if defined(_IBM) && defined(_SIMPLE)
-      ! call force_vel(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fibm)
 #endif
       call rk(rkcoeff(:,irk),n,dli,l,zc,zf,dzci,dzfi,grid_vol_ratio_c,grid_vol_ratio_f,visc,dt,p, &
               is_bound,is_forced,velf,bforce,tauxo,tauyo,tauzo,u,v,w, &

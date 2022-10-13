@@ -35,21 +35,24 @@ subroutine initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,ng,nb,lo,hi,cell_u_tag,c
 
  if (.not.is_data) then
    !
-   cell_u_tag(:,:,:)    = 0.
-   cell_v_tag(:,:,:)    = 0.
-   cell_w_tag(:,:,:)    = 0.
-   cell_phi_tag(:,:,:)  = 0.
+   cell_u_tag(:,:,:)    = 0._rp
+   cell_v_tag(:,:,:)    = 0._rp
+   cell_w_tag(:,:,:)    = 0._rp
+   cell_phi_tag(:,:,:)  = 0._rp
    !
    call IBM_mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,cell_phi_tag)
    !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
    call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
    !
    do k=0,n(3); do j=0,n(2); do i=0,n(1)
-     if((cell_phi_tag(i,j,k) + cell_phi_tag(i+1,j,k)) > 0.5_rp) cell_u_tag(i,j,k) = 1.
-     if((cell_phi_tag(i,j,k) + cell_phi_tag(i,j+1,k)) > 0.5_rp) cell_v_tag(i,j,k) = 1.
-     if((cell_phi_tag(i,j,k) + cell_phi_tag(i,j,k+1)) > 0.5_rp) cell_w_tag(i,j,k) = 1.
+     if((cell_phi_tag(i,j,k) + cell_phi_tag(i+1,j,k)) > 0.5_rp) cell_u_tag(i,j,k) = 1._rp
+     if((cell_phi_tag(i,j,k) + cell_phi_tag(i,j+1,k)) > 0.5_rp) cell_v_tag(i,j,k) = 1._rp
+     if((cell_phi_tag(i,j,k) + cell_phi_tag(i,j,k+1)) > 0.5_rp) cell_w_tag(i,j,k) = 1._rp
    enddo; enddo; enddo
-   call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
+   ! call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
+   call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_u_tag)
+   call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_v_tag)
+   call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_w_tag)
    !
    dummy_time = 0.; dummy_istep = 0
    !$acc update self(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
@@ -59,7 +62,7 @@ subroutine initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,ng,nb,lo,hi,cell_u_tag,c
    !
    !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
     call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
-    call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
+    ! call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
   if (myid == 0)  print*, '*** Stored IBM data loaded ***'
    !---------------------------------------------------------------------
  endif
@@ -133,7 +136,10 @@ if (.not.is_data) then
 
 #if defined(_IBM_BC)
        tmp(:,:,:) = real(Level_set(:,:,:),rp)
-       call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
+       ! call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
+       call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_u_tag)
+       call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_v_tag)
+       call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_w_tag)
        call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
   if (myid == 0)  print*, '*** Volume fractions have been calculated! ***'
   !---------------------------------------------------------------------
@@ -142,7 +148,10 @@ if (.not.is_data) then
   if (myid == 0)  print*, '*** Solid marker has been calculated! ***'
   !---------------------------------------------------------------------
 #else
-       call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
+       ! call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
+       call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_u_tag)
+       call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_v_tag)
+       call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_w_tag)
        call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
    if (myid == 0)  print*, '*** Volume fractions have been calculated! ***'
   !---------------------------------------------------------------------
@@ -166,7 +175,10 @@ if (.not.is_data) then
 
   call normal_vectors(n,lo,hi,Level_set,cell_phi_tag,nx_surf,ny_surf,nz_surf,nabs_surf,zc,zf,dzc,dzf,dl,dli,n,surf_height)
      !$acc enter data copyin(nx_surf,ny_surf,nz_surf,nabs_surf)
-     call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,nx_surf,ny_surf,nz_surf)
+     ! call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,nx_surf,ny_surf,nz_surf)
+     call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,nx_surf)
+     call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,ny_surf)
+     call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,nz_surf)
      call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,nabs_surf)
   if (myid.eq.0)  print*, '*** Normal vectors have been calculated! ***'
   !*********************************************************************
@@ -300,12 +312,18 @@ else
   ! allocate(tmp(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6))
   !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
   ! tmp(:,:,:) = real(Level_set(:,:,:),rp)
-  call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
+  ! call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
+  call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_u_tag)
+  call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_v_tag)
+  call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_w_tag)
   call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
   ! call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,tmp)
   ! Level_set(:,:,:) = int(tmp(:,:,:),i8)
   !$acc enter data copyin(nx_surf,ny_surf,nz_surf,nabs_surf,deltan)
-  call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,nx_surf,ny_surf,nz_surf)
+  ! call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,nx_surf,ny_surf,nz_surf)
+  call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,nx_surf)
+  call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,ny_surf)
+  call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,nz_surf)
   call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,nabs_surf)
   call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,deltan)
 
@@ -336,7 +354,10 @@ else
    ! allocate(tmp(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6))
    !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
    ! tmp(:,:,:) = real(Level_set(:,:,:),rp)
-   call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
+   ! call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
+   call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_u_tag)
+   call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_v_tag)
+   call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_w_tag)
    call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
    ! call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,tmp)
    ! Level_set(:,:,:) = int(tmp(:,:,:),i8)

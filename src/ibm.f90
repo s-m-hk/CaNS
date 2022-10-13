@@ -153,13 +153,13 @@ do k=1,int(solid_height_ratio*nz) ! Lower wall
     enddo
   enddo
 enddo
+!$acc parallel loop gang collapse(3) default(present) private(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
 do k=nz,(nz-int(solid_height_ratio*nz)),-1 ! Upper wall
-  ! if (myid == 0) print*, '*** Calculating volume fractions at k = ', k
   do j=1,n(2)
     do i=1,n(1)
       xxx = (i+lo(1)-1-.5)*dxl
       yyy = (j+lo(2)-1-.5)*dyl
-      zzz = zc(k)
+      zzz = lz - zc(k)
 	  ghost = height_map_ghost(xxx,yyy,zzz,i,j,dzc(k),n,surf_height)
       if (ghost) then
           cell_phi_tag(i,j,k) = 1.
@@ -177,8 +177,8 @@ do k=nz,(nz-int(solid_height_ratio*nz)),-1 ! Upper wall
       cell_start_y = (j+lo(2)-1-1.)*dyl
       cell_end_y   = (j+lo(2)-1-.0)*dyl
 
-      cell_start_z = zf(k-1)
-      cell_end_z   = zf(k)
+      cell_start_z = lz - zf(k-1)
+      cell_end_z   = lz - zf(k)
 
       dxx = (cell_end_x-cell_start_x)/number_of_divisions
       dyy = (cell_end_y-cell_start_y)/number_of_divisions
@@ -207,6 +207,7 @@ enddo
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 else ! Objects generated using functions
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!$acc parallel loop gang collapse(3) default(present) private(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
 do k=1,int(solid_height_ratio*nz) ! Lower wall
   do j=1,n(2)
     do i=1,n(1)
@@ -242,10 +243,13 @@ do k=1,int(solid_height_ratio*nz) ! Lower wall
       dzz = (cell_end_z-cell_start_z)/number_of_divisions
 
       counter = 0
+      !$acc loop seq
       do nn= 1,number_of_divisions
           zzz = cell_start_z+(nn-1)*dzz
+        !$acc loop seq
         do m = 1,number_of_divisions
             yyy = cell_start_y + (m-1)*dyy
+            !$acc loop seq
             do l = 1,number_of_divisions
               xxx = cell_start_x + (l-1)*dxx
 	          if(trim(surface_type) == 'Wall') then
@@ -276,11 +280,13 @@ do k=1,int(solid_height_ratio*nz) ! Lower wall
       dzz = (cell_end_z-cell_start_z)/number_of_divisions
 
       counter = 0
+      !$acc loop seq
       do nn= 1,number_of_divisions
-          xxx = 0
           zzz = cell_start_z+(nn-1)*dzz
+        !$acc loop seq
         do m = 1,number_of_divisions
             yyy = cell_start_y + (m-1)*dyy
+            !$acc loop seq
             do l = 1,number_of_divisions
               xxx = cell_start_x + (l-1)*dxx
 	          if(trim(surface_type) == 'Wall') then
@@ -311,11 +317,13 @@ do k=1,int(solid_height_ratio*nz) ! Lower wall
       dzz = (cell_end_z-cell_start_z)/number_of_divisions
 
       counter = 0
+      !$acc loop seq
       do nn= 1,number_of_divisions
-          xxx = 0
           zzz = cell_start_z+(nn-1)*dzz
+        !$acc loop seq
         do m = 1,number_of_divisions
             yyy = cell_start_y + (m-1)*dyy
+            !$acc loop seq
             do l = 1,number_of_divisions
               xxx = cell_start_x + (l-1)*dxx
 	          if(trim(surface_type) == 'Wall') then
@@ -346,11 +354,13 @@ do k=1,int(solid_height_ratio*nz) ! Lower wall
       dzz = (cell_end_z-cell_start_z)/number_of_divisions
 
       counter = 0
+      !$acc loop seq
       do nn= 1,number_of_divisions
-          xxx = 0
           zzz = cell_start_z+(nn-1)*dzz
+        !$acc loop seq
         do m = 1,number_of_divisions
             yyy = cell_start_y + (m-1)*dyy
+            !$acc loop seq
             do l = 1,number_of_divisions
               xxx = cell_start_x + (l-1)*dxx
 	          if(trim(surface_type) == 'Wall') then
@@ -368,12 +378,13 @@ do k=1,int(solid_height_ratio*nz) ! Lower wall
   enddo
 enddo
 !
-do k=nz,(nz-int(solid_height_ratio*nz)),-1 ! Lower wall
+!$acc parallel loop gang collapse(3) default(present) private(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
+do k=nz,(nz-int(solid_height_ratio*nz)),-1 ! Upper wall
   do j=1,n(2)
     do i=1,n(1)
       xxx = (i+lo(1)-1-.5)*dx
       yyy = (j+lo(2)-1-.5)*dy
-      zzz = zc(k)
+      zzz = lz - zc(k)
 	  if(trim(surface_type) == 'Wall') then
           ghost = wall_ghost(xxx,yyy,zzz,i,j,dzc(k))
       elseif(trim(surface_type) == 'Sphere') then
@@ -395,18 +406,21 @@ do k=nz,(nz-int(solid_height_ratio*nz)),-1 ! Lower wall
       cell_start_y = (j+lo(2)-1-1.)*dyl
       cell_end_y   = (j+lo(2)-1-.0)*dyl
 
-      cell_start_z = zf(k-1)
-      cell_end_z   = zf(k)
+      cell_start_z = lz - zf(k-1)
+      cell_end_z   = lz - zf(k)
 
       dxx = (cell_end_x-cell_start_x)/number_of_divisions
       dyy = (cell_end_y-cell_start_y)/number_of_divisions
       dzz = (cell_end_z-cell_start_z)/number_of_divisions
 
       counter = 0
+      !$acc loop seq
       do nn= 1,number_of_divisions
-          zzz = cell_start_z+(nn-1)*dzz
+          zzz = cell_start_z + (nn-1)*dzz
+        !$acc loop seq
         do m = 1,number_of_divisions
             yyy = cell_start_y + (m-1)*dyy
+            !$acc loop seq
             do l = 1,number_of_divisions
               xxx = cell_start_x + (l-1)*dxx
 	          if(trim(surface_type) == 'Wall') then
@@ -429,19 +443,21 @@ do k=nz,(nz-int(solid_height_ratio*nz)),-1 ! Lower wall
       cell_start_y = (j+lo(2)-1-1.)*dyl
       cell_end_y   = (j+lo(2)-1-.0)*dyl
 
-      cell_start_z = zf(k-1)
-      cell_end_z   = zf(k)
+      cell_start_z = lz - zf(k-1)
+      cell_end_z   = lz - zf(k)
 
       dxx = (cell_end_x-cell_start_x)/number_of_divisions
       dyy = (cell_end_y-cell_start_y)/number_of_divisions
       dzz = (cell_end_z-cell_start_z)/number_of_divisions
 
       counter = 0
+      !$acc loop seq
       do nn= 1,number_of_divisions
-          xxx = 0
           zzz = cell_start_z+(nn-1)*dzz
+        !$acc loop seq
         do m = 1,number_of_divisions
             yyy = cell_start_y + (m-1)*dyy
+            !$acc loop seq
             do l = 1,number_of_divisions
               xxx = cell_start_x + (l-1)*dxx
 	          if(trim(surface_type) == 'Wall') then
@@ -464,19 +480,21 @@ do k=nz,(nz-int(solid_height_ratio*nz)),-1 ! Lower wall
       cell_start_y = (j+lo(2)-1-.5)*dyl
       cell_end_y   = (j+lo(2)-1+.5)*dyl
 
-      cell_start_z = zf(k-1)
-      cell_end_z   = zf(k)
+      cell_start_z = lz - zf(k-1)
+      cell_end_z   = lz - zf(k)
 
       dxx = (cell_end_x-cell_start_x)/number_of_divisions
       dyy = (cell_end_y-cell_start_y)/number_of_divisions
       dzz = (cell_end_z-cell_start_z)/number_of_divisions
 
       counter = 0
+      !$acc loop seq
       do nn= 1,number_of_divisions
-          xxx = 0
           zzz = cell_start_z+(nn-1)*dzz
+        !$acc loop seq
         do m = 1,number_of_divisions
             yyy = cell_start_y + (m-1)*dyy
+            !$acc loop seq
             do l = 1,number_of_divisions
               xxx = cell_start_x + (l-1)*dxx
 	          if(trim(surface_type) == 'Wall') then
@@ -499,19 +517,21 @@ do k=nz,(nz-int(solid_height_ratio*nz)),-1 ! Lower wall
       cell_start_y = (j+lo(2)-1-1.)*dyl
       cell_end_y   = (j+lo(2)-1-.0)*dyl
 
-      cell_start_z = zc(k-1)
-      cell_end_z   = zc(k)
+      cell_start_z = lz - zc(k-1)
+      cell_end_z   = lz - zc(k)
 
       dxx = (cell_end_x-cell_start_x)/number_of_divisions
       dyy = (cell_end_y-cell_start_y)/number_of_divisions
       dzz = (cell_end_z-cell_start_z)/number_of_divisions
 
       counter = 0
+      !$acc loop seq
       do nn= 1,number_of_divisions
-          xxx = 0
           zzz = cell_start_z+(nn-1)*dzz
+        !$acc loop seq
         do m = 1,number_of_divisions
             yyy = cell_start_y + (m-1)*dyy
+            !$acc loop seq
             do l = 1,number_of_divisions
               xxx = cell_start_x + (l-1)*dxx
 	          if(trim(surface_type) == 'Wall') then
