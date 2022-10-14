@@ -5,20 +5,11 @@ use decomp_2d
 use mod_param, only: lx,ly,lz,dx,dy,dxi,dyi,dims, &
                      surface_type,solid_height_ratio,Rotation_angle, &
                      sx, sy, sz, depth, rod, &
-                     small
+                     small, nb
 use mod_common_mpi, only: myid, ipencil => ipencil_axis
-#if defined(_OPENACC)
-use mod_load, only: transpose_to_or_from_z_gpu_non_io,transpose_to_or_from_z_non_io
-use mod_common_cudecomp, only: buf => solver_buf_0, work, &
-                               dtype_rp => cudecomp_real_rp, &
-                               ap_x   => ap_x_poi, &
-                               ap_y   => ap_y_poi, &
-                               ap_z   => ap_z_poi, &
-                               ap_x_0 => ap_x    , &
-                               ap_y_0 => ap_y    , &
-                               ch => handle,gd => gd_poi
-#endif
 use mod_types
+!@acc use openacc
+!@acc use cudecomp
 implicit none
 private
 #if defined(_SIMPLE)
@@ -37,8 +28,10 @@ integer ,intent(in), dimension(3) :: n,ng,lo,hi
 real(rp),intent(in), dimension(0:) :: zc,zf,zf_g,dzc,dzf
 real(rp),intent(out),dimension(0:,0:,0:) :: cell_phi_tag
 real(rp)::xxx,yyy,zzz,ratio
-integer i,j,k,nz
+integer i,j,k,nx,ny,nz
 logical :: ghost
+nx = n(1)
+ny = n(2)
 nz = n(3)
 #if !defined(_DECOMP_Z)
 ratio = 1.
@@ -65,9 +58,10 @@ end subroutine IBM_Mask
 #endif
 !
 #if defined(_VOLUME)
-subroutine IBM_Mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag,Level_set,surf_height)
+subroutine IBM_Mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,is_bound,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag,Level_set,surf_height)
 implicit none
 integer ,intent(in), dimension(3) :: n,ng,lo,hi
+logical ,intent(in), dimension(0:1,3) :: is_bound
 real(rp),intent(in), dimension(0:) :: zc,zf,zf_g,dzc,dzf
 real(rp),intent(in), dimension(1:,1:) :: surf_height
 #if defined(_IBM_BC)
@@ -82,14 +76,17 @@ real(rp), allocatable, dimension(:,:,:) :: var_u,var_v,var_w,var_phi
 real(rp), allocatable, dimension(:,:,:) :: tmp_x,tmp_y,tmp_z
 #endif
 integer i,j,k,l,nn,m,number_of_divisions
-real(rp):: xxx,yyy,zzz,dxx,dyy,dzz,dxl,dyl
+real(rp):: length_z,xxx,yyy,zzz,dxx,dyy,dzz,dxl,dyl
 real(rp):: cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z
 real(rp):: counter,ratio
 logical :: inside,ghost
 integer, dimension(3) :: nh
-integer :: kk,nz
+integer :: nx,ny,nz,kk
 dxl = dx
 dyl = dy
+length_z = lz
+nx = n(1)
+ny = n(2)
 nz = n(3)
 #if defined(_IBM_BC)
 nh(1:3) = 6
@@ -109,12 +106,13 @@ number_of_divisions = 50
 number_of_divisions = 100
 #endif
 if (myid == 0) print*, '*** Calculating volume fractions ***'
-if(trim(surface_type) == 'HeightMap') then !Only calculate volume fractions in the staggered control volumes separately if a geometric function is used to define the solid, otherwise the cell-center calculated volume fraction should be interpolated onto the face centers.
+if(trim(surface_type) == 'HeightMap') then ! Only calculate volume fractions in the staggered control volumes separately if a geometric function is used to define the solid, otherwise the cell-center calculated volume fraction should be interpolated onto the face centers.
+if(.not.is_bound(1,3)) then
 !$acc parallel loop gang collapse(3) default(present) private(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
 do k=1,int(ratio*nz) ! Lower wall
   ! if (myid == 0) print*, '*** Calculating volume fractions at k = ', k
-  do j=1,n(2)
-    do i=1,n(1)
+  do j=1,ny
+    do i=1,nx
       xxx = (i+lo(1)-1-.5)*dxl
       yyy = (j+lo(2)-1-.5)*dyl
       zzz = zc(k)
@@ -162,20 +160,23 @@ do k=1,int(ratio*nz) ! Lower wall
     enddo
   enddo
 enddo
+endif
+if(.not.is_bound(0,3)) then
+#if !defined(_DECOMP_Z)
 !$acc parallel loop gang collapse(3) default(present) private(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
 do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
-  do j=1,n(2)
-    do i=1,n(1)
+  do j=1,ny
+    do i=1,nx
       xxx = (i+lo(1)-1-.5)*dxl
       yyy = (j+lo(2)-1-.5)*dyl
-      zzz = lz - zc(k)
+      zzz = length_z - zc(k)
 	  ghost = height_map_ghost(xxx,yyy,zzz,i,j,dzc(k),n,surf_height)
       if (ghost) then
-          cell_phi_tag(i,j,k) = 1.
-          cell_u_tag(i,j,k)   = 1.
-          cell_v_tag(i,j,k)   = 1.
-          cell_w_tag(i,j,k)   = 1.
-          Level_set(i,j,k)    = 1
+        cell_phi_tag(i,j,k) = 1.
+        cell_u_tag(i,j,k)   = 1.
+        cell_v_tag(i,j,k)   = 1.
+        cell_w_tag(i,j,k)   = 1.
+        Level_set(i,j,k)    = 1
       endif
 
 ! Cell Center
@@ -186,8 +187,8 @@ do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
       cell_start_y = (j+lo(2)-1-1.)*dyl
       cell_end_y   = (j+lo(2)-1-.0)*dyl
 
-      cell_start_z = lz - zf(k-1)
-      cell_end_z   = lz - zf(k)
+      cell_start_z = length_z - zf(k-1)
+      cell_end_z   = length_z - zf(k)
 
       dxx = (cell_end_x-cell_start_x)/number_of_divisions
       dyy = (cell_end_y-cell_start_y)/number_of_divisions
@@ -213,13 +214,16 @@ do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
     enddo
   enddo
 enddo
+#endif
+endif
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-else ! Objects generated using functions
+else ! Objects generated using functions [not GPU driven for now]
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!$acc parallel loop gang collapse(3) default(present) private(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
+if(.not.is_bound(1,3)) then
+!!$acc parallel loop gang collapse(3) default(present) private(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
 do k=1,int(ratio*nz) ! Lower wall
-  do j=1,n(2)
-    do i=1,n(1)
+  do j=1,ny
+    do i=1,nx
       xxx = (i+lo(1)-1-.5)*dx
       yyy = (j+lo(2)-1-.5)*dy
       zzz = zc(k)
@@ -252,13 +256,13 @@ do k=1,int(ratio*nz) ! Lower wall
       dzz = (cell_end_z-cell_start_z)/number_of_divisions
 
       counter = 0
-      !$acc loop seq
+!      !$acc loop seq
       do nn= 1,number_of_divisions
           zzz = cell_start_z+(nn-1)*dzz
-        !$acc loop seq
+!        !$acc loop seq
         do m = 1,number_of_divisions
             yyy = cell_start_y + (m-1)*dyy
-            !$acc loop seq
+!            !$acc loop seq
             do l = 1,number_of_divisions
               xxx = cell_start_x + (l-1)*dxx
 	          if(trim(surface_type) == 'Wall') then
@@ -289,13 +293,13 @@ do k=1,int(ratio*nz) ! Lower wall
       dzz = (cell_end_z-cell_start_z)/number_of_divisions
 
       counter = 0
-      !$acc loop seq
+!      !$acc loop seq
       do nn= 1,number_of_divisions
           zzz = cell_start_z+(nn-1)*dzz
-        !$acc loop seq
+!        !$acc loop seq
         do m = 1,number_of_divisions
             yyy = cell_start_y + (m-1)*dyy
-            !$acc loop seq
+!            !$acc loop seq
             do l = 1,number_of_divisions
               xxx = cell_start_x + (l-1)*dxx
 	          if(trim(surface_type) == 'Wall') then
@@ -326,13 +330,13 @@ do k=1,int(ratio*nz) ! Lower wall
       dzz = (cell_end_z-cell_start_z)/number_of_divisions
 
       counter = 0
-      !$acc loop seq
+!      !$acc loop seq
       do nn= 1,number_of_divisions
           zzz = cell_start_z+(nn-1)*dzz
-        !$acc loop seq
+!        !$acc loop seq
         do m = 1,number_of_divisions
             yyy = cell_start_y + (m-1)*dyy
-            !$acc loop seq
+!            !$acc loop seq
             do l = 1,number_of_divisions
               xxx = cell_start_x + (l-1)*dxx
 	          if(trim(surface_type) == 'Wall') then
@@ -363,13 +367,13 @@ do k=1,int(ratio*nz) ! Lower wall
       dzz = (cell_end_z-cell_start_z)/number_of_divisions
 
       counter = 0
-      !$acc loop seq
+!      !$acc loop seq
       do nn= 1,number_of_divisions
           zzz = cell_start_z+(nn-1)*dzz
-        !$acc loop seq
+!        !$acc loop seq
         do m = 1,number_of_divisions
             yyy = cell_start_y + (m-1)*dyy
-            !$acc loop seq
+!            !$acc loop seq
             do l = 1,number_of_divisions
               xxx = cell_start_x + (l-1)*dxx
 	          if(trim(surface_type) == 'Wall') then
@@ -387,13 +391,16 @@ do k=1,int(ratio*nz) ! Lower wall
   enddo
 enddo
 !
-!$acc parallel loop gang collapse(3) default(present) private(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
+endif
+if(.not.is_bound(0,3)) then
+#if !defined(_DECOMP_Z)
+!!$acc parallel loop gang collapse(3) default(present) private(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
 do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
-  do j=1,n(2)
-    do i=1,n(1)
+  do j=1,ny
+    do i=1,nx
       xxx = (i+lo(1)-1-.5)*dx
       yyy = (j+lo(2)-1-.5)*dy
-      zzz = lz - zc(k)
+      zzz = length_z - zc(k)
 	  if(trim(surface_type) == 'Wall') then
           ghost = wall_ghost(xxx,yyy,zzz,i,j,dzc(k))
       elseif(trim(surface_type) == 'Sphere') then
@@ -415,21 +422,21 @@ do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
       cell_start_y = (j+lo(2)-1-1.)*dyl
       cell_end_y   = (j+lo(2)-1-.0)*dyl
 
-      cell_start_z = lz - zf(k-1)
-      cell_end_z   = lz - zf(k)
+      cell_start_z = length_z - zf(k-1)
+      cell_end_z   = length_z - zf(k)
 
       dxx = (cell_end_x-cell_start_x)/number_of_divisions
       dyy = (cell_end_y-cell_start_y)/number_of_divisions
       dzz = (cell_end_z-cell_start_z)/number_of_divisions
 
       counter = 0
-      !$acc loop seq
+!      !$acc loop seq
       do nn= 1,number_of_divisions
           zzz = cell_start_z + (nn-1)*dzz
-        !$acc loop seq
+!        !$acc loop seq
         do m = 1,number_of_divisions
             yyy = cell_start_y + (m-1)*dyy
-            !$acc loop seq
+!            !$acc loop seq
             do l = 1,number_of_divisions
               xxx = cell_start_x + (l-1)*dxx
 	          if(trim(surface_type) == 'Wall') then
@@ -452,21 +459,21 @@ do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
       cell_start_y = (j+lo(2)-1-1.)*dyl
       cell_end_y   = (j+lo(2)-1-.0)*dyl
 
-      cell_start_z = lz - zf(k-1)
-      cell_end_z   = lz - zf(k)
+      cell_start_z = length_z - zf(k-1)
+      cell_end_z   = length_z - zf(k)
 
       dxx = (cell_end_x-cell_start_x)/number_of_divisions
       dyy = (cell_end_y-cell_start_y)/number_of_divisions
       dzz = (cell_end_z-cell_start_z)/number_of_divisions
 
       counter = 0
-      !$acc loop seq
+!      !$acc loop seq
       do nn= 1,number_of_divisions
           zzz = cell_start_z+(nn-1)*dzz
-        !$acc loop seq
+!        !$acc loop seq
         do m = 1,number_of_divisions
             yyy = cell_start_y + (m-1)*dyy
-            !$acc loop seq
+!            !$acc loop seq
             do l = 1,number_of_divisions
               xxx = cell_start_x + (l-1)*dxx
 	          if(trim(surface_type) == 'Wall') then
@@ -489,21 +496,21 @@ do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
       cell_start_y = (j+lo(2)-1-.5)*dyl
       cell_end_y   = (j+lo(2)-1+.5)*dyl
 
-      cell_start_z = lz - zf(k-1)
-      cell_end_z   = lz - zf(k)
+      cell_start_z = length_z - zf(k-1)
+      cell_end_z   = length_z - zf(k)
 
       dxx = (cell_end_x-cell_start_x)/number_of_divisions
       dyy = (cell_end_y-cell_start_y)/number_of_divisions
       dzz = (cell_end_z-cell_start_z)/number_of_divisions
 
       counter = 0
-      !$acc loop seq
+!      !$acc loop seq
       do nn= 1,number_of_divisions
           zzz = cell_start_z+(nn-1)*dzz
-        !$acc loop seq
+!        !$acc loop seq
         do m = 1,number_of_divisions
             yyy = cell_start_y + (m-1)*dyy
-            !$acc loop seq
+!            !$acc loop seq
             do l = 1,number_of_divisions
               xxx = cell_start_x + (l-1)*dxx
 	          if(trim(surface_type) == 'Wall') then
@@ -526,21 +533,21 @@ do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
       cell_start_y = (j+lo(2)-1-1.)*dyl
       cell_end_y   = (j+lo(2)-1-.0)*dyl
 
-      cell_start_z = lz - zc(k-1)
-      cell_end_z   = lz - zc(k)
+      cell_start_z = length_z - zc(k-1)
+      cell_end_z   = length_z - zc(k)
 
       dxx = (cell_end_x-cell_start_x)/number_of_divisions
       dyy = (cell_end_y-cell_start_y)/number_of_divisions
       dzz = (cell_end_z-cell_start_z)/number_of_divisions
 
       counter = 0
-      !$acc loop seq
+!      !$acc loop seq
       do nn= 1,number_of_divisions
           zzz = cell_start_z+(nn-1)*dzz
-        !$acc loop seq
+!        !$acc loop seq
         do m = 1,number_of_divisions
             yyy = cell_start_y + (m-1)*dyy
-            !$acc loop seq
+!            !$acc loop seq
             do l = 1,number_of_divisions
               xxx = cell_start_x + (l-1)*dxx
 	          if(trim(surface_type) == 'Wall') then
@@ -557,14 +564,16 @@ do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
     enddo
   enddo
 enddo
+#endif
+endif
 !
 endif
 
 if(trim(surface_type) == 'HeightMap') then
 !$acc parallel loop gang collapse(3) default(present) async(1)
-do k=1,int(ratio*nz)
-  do j=1,n(2)-1
-    do i=1,n(1)-1
+do k=1,nz-1
+  do j=1,ny-1
+    do i=1,nx-1
      cell_u_tag(i,j,k) = 0.5*(cell_phi_tag(i+1,j,k)+cell_phi_tag(i,j,k))
      cell_v_tag(i,j,k) = 0.5*(cell_phi_tag(i,j+1,k)+cell_phi_tag(i,j,k))
      cell_w_tag(i,j,k) = 0.5*(cell_phi_tag(i,j,k+1)+cell_phi_tag(i,j,k))
@@ -574,94 +583,17 @@ do k=1,int(ratio*nz)
 endif
 
 ! Duplicate volume fractions on the upper part of the domain (symmetric channel)
-!#if !defined(_DECOMP_Z)
-! If Z-pencils are not being used, data must be transposed to duplicate the lower wall on the upper wall [GPU (OPENACC) version doesn't currently work]
-!#if defined(_OPENACC)
-!        !
-!        !$acc wait
-!        !
-!        nz = ng(3)
-!        allocate(var_u  (zsize(1),zsize(2),zsize(3)) , &
-!                 var_v  (zsize(1),zsize(2),zsize(3)) , &
-!                 var_w  (zsize(1),zsize(2),zsize(3)) , &
-!                 var_phi(zsize(1),zsize(2),zsize(3)) )
-!        !
-!        call transpose_to_or_from_z_gpu_non_io('f',ipencil,nh,cell_u_tag(1:n(1),1:n(2),1:n(3)),var_u)
-!        call transpose_to_or_from_z_gpu_non_io('f',ipencil,nh,cell_v_tag(1:n(1),1:n(2),1:n(3)),var_v)
-!        call transpose_to_or_from_z_gpu_non_io('f',ipencil,nh,cell_w_tag(1:n(1),1:n(2),1:n(3)),var_w)
-!        call transpose_to_or_from_z_gpu_non_io('f',ipencil,nh,cell_phi_tag(1:n(1),1:n(2),1:n(3)),var_phi)
-!        kk = 1
-!        !$acc parallel loop gang default(present) async(1)
-!        do k = nz,(nz-int(solid_height_ratio*nz)),-1
-!               var_phi(:,:,k) = var_phi(:,:,kk)
-!        	   var_u(:,:,k)   = var_u(:,:,kk)
-!        	   var_v(:,:,k)   = var_v(:,:,kk)
-!        	   var_w(:,:,k)   = var_w(:,:,kk)
-!        	   kk = kk + 1
-!        enddo
-!        call transpose_to_or_from_z_gpu_non_io('b',ipencil,nh,cell_u_tag,var_u)
-!        call transpose_to_or_from_z_gpu_non_io('b',ipencil,nh,cell_v_tag,var_v)
-!        call transpose_to_or_from_z_gpu_non_io('b',ipencil,nh,cell_w_tag,var_w)
-!        call transpose_to_or_from_z_gpu_non_io('b',ipencil,nh,cell_phi_tag,var_phi)
-!        deallocate(var_u,var_v,var_w,var_phi)
-!#else
-!        !$acc update self(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
-!        allocate(tmp_x(xsize(1),xsize(2),xsize(3)), &
-!                 tmp_y(ysize(1),ysize(2),ysize(3)), &
-!                 tmp_z(zsize(1),zsize(2),zsize(3)))
-!        !
-!        call transpose_to_or_from_z_non_io('f',ipencil,nh,cell_u_tag(1:n(1),1:n(2),1:n(3)),tmp_x,tmp_y,tmp_z)
-!        kk = 1
-!        do k = ng(3),(ng(3)-int(solid_height_ratio*ng(3))),-1
-!        	   tmp_x(:,:,k)   = tmp_x(:,:,kk)
-!        	   tmp_y(:,:,k)   = tmp_y(:,:,kk)
-!        	   tmp_z(:,:,k)   = tmp_z(:,:,kk)
-!        	   kk = kk + 1
-!        enddo
-!        call transpose_to_or_from_z_non_io('b',ipencil,nh,cell_u_tag(1:n(1),1:n(2),1:n(3)),tmp_x,tmp_y,tmp_z)
-!        call transpose_to_or_from_z_non_io('f',ipencil,nh,cell_v_tag(1:n(1),1:n(2),1:n(3)),tmp_x,tmp_y,tmp_z)
-!        kk = 1
-!        do k = ng(3),(ng(3)-int(solid_height_ratio*ng(3))),-1
-!        	   tmp_x(:,:,k)   = tmp_x(:,:,kk)
-!        	   tmp_y(:,:,k)   = tmp_y(:,:,kk)
-!        	   tmp_z(:,:,k)   = tmp_z(:,:,kk)
-!        	   kk = kk + 1
-!        enddo
-!        call transpose_to_or_from_z_non_io('b',ipencil,nh,cell_v_tag(1:n(1),1:n(2),1:n(3)),tmp_x,tmp_y,tmp_z)
-!        call transpose_to_or_from_z_non_io('f',ipencil,nh,cell_w_tag(1:n(1),1:n(2),1:n(3)),tmp_x,tmp_y,tmp_z)
-!        kk = 1
-!        do k = ng(3),(ng(3)-int(solid_height_ratio*ng(3))),-1
-!        	   tmp_x(:,:,k)   = tmp_x(:,:,kk)
-!        	   tmp_y(:,:,k)   = tmp_y(:,:,kk)
-!        	   tmp_z(:,:,k)   = tmp_z(:,:,kk)
-!        	   kk = kk + 1
-!        enddo
-!        call transpose_to_or_from_z_non_io('b',ipencil,nh,cell_w_tag(1:n(1),1:n(2),1:n(3)),  tmp_x,tmp_y,tmp_z)
-!        call transpose_to_or_from_z_non_io('f',ipencil,nh,cell_phi_tag(1:n(1),1:n(2),1:n(3)),tmp_x,tmp_y,tmp_z)
-!        kk = 1
-!        do k = ng(3),(ng(3)-int(solid_height_ratio*ng(3))),-1
-!        	   tmp_x(:,:,k)   = tmp_x(:,:,kk)
-!        	   tmp_y(:,:,k)   = tmp_y(:,:,kk)
-!        	   tmp_z(:,:,k)   = tmp_z(:,:,kk)
-!        	   kk = kk + 1
-!        enddo
-!        call transpose_to_or_from_z_non_io('b',ipencil,nh,cell_phi_tag(1:n(1),1:n(2),1:n(3)),tmp_x,tmp_y,tmp_z)
-!        deallocate(tmp_x,tmp_y,tmp_z)
-!        !
-!        nz = n(3)
-!        !$acc wait
-!#endif
-!#else
-! kk = 1
+#if defined(_DECOMP_Z)
+kk = 1
 !$acc parallel loop gang default(present) async(1)
-! do k = nz,(nz-int(ratio*nz)),-1
-       ! cell_phi_tag(1:n(1),1:n(2),k) = cell_phi_tag(1:n(1),1:n(2),kk)
-	   ! cell_u_tag(1:n(1),1:n(2),k)   = cell_u_tag(1:n(1),1:n(2),kk)
-	   ! cell_v_tag(1:n(1),1:n(2),k)   = cell_v_tag(1:n(1),1:n(2),kk)
-	   ! cell_w_tag(1:n(1),1:n(2),k)   = cell_w_tag(1:n(1),1:n(2),kk)
-	   ! kk = kk + 1
-! enddo
-!#endif
+do k = nz,(nz-int(ratio*nz)),-1
+     cell_phi_tag(1:n(1),1:n(2),k) = cell_phi_tag(1:n(1),1:n(2),kk)
+	 cell_u_tag(1:n(1),1:n(2),k)   = cell_u_tag(1:n(1),1:n(2),kk)
+	 cell_v_tag(1:n(1),1:n(2),k)   = cell_v_tag(1:n(1),1:n(2),kk)
+	 cell_w_tag(1:n(1),1:n(2),k)   = cell_w_tag(1:n(1),1:n(2),kk)
+	 kk = kk + 1
+enddo
+#endif
 
 end subroutine IBM_Mask
 #endif

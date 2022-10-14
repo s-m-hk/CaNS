@@ -40,7 +40,7 @@ subroutine initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,ng,nb,lo,hi,cell_u_tag,c
    cell_w_tag(:,:,:)    = 0._rp
    cell_phi_tag(:,:,:)  = 0._rp
    !
-   call IBM_mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,cell_phi_tag)
+   call IBM_mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,is_bound,cell_phi_tag)
    !$acc enter data copyin(cell_phi_tag)
    call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
    !
@@ -134,7 +134,7 @@ if (.not.is_data) then
   cell_phi_tag(:,:,:)  = 0.
   Level_set(:,:,:)     = 0
   !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag,Level_set)
-  call IBM_mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag,Level_set,surf_height)
+  call IBM_mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,is_bound,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag,Level_set,surf_height)
 
 #if defined(_IBM_BC)
        tmp(:,:,:) = real(Level_set(:,:,:),rp)
