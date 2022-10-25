@@ -3,4 +3,4 @@
 	url = git@github.com:NVIDIA/cuDecomp.git
 [submodule "dependencies/2decomp-fft"]
 	path = dependencies/2decomp-fft
-	url = git@github.com:s-m-hk/2decomp-fft.git
+	url = git@github.com:CaNS-World/2decomp-fft.git
