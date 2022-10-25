@@ -40,7 +40,12 @@ subroutine initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,ng,nb,lo,hi,cell_u_tag,c
    cell_w_tag(:,:,:)    = 0._rp
    cell_phi_tag(:,:,:)  = 0._rp
    !
+#if defined(_SIMPLE)
+   call IBM_mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,cell_phi_tag)
+#endif
+#if defined(_VOLUME)
    call IBM_mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,is_bound,cell_phi_tag)
+#endif
    !$acc enter data copyin(cell_phi_tag)
    call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
    !
