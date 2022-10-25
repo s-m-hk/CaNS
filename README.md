@@ -62,6 +62,11 @@ so the libraries are downloaded too. Alternatively, in case the repository has a
 ```bash
 git submodule update --init --recursive
 ```
+Note: the submodules will very likely end up pointing to the specific commit from which they were cloned and not track the branch of the remote repository, putting them in a detached HEAD state. To rectify this, run the following commands to make them track the main remote repository branch:
+```bash
+git submodule foreach git checkout master 
+git submodule foreach git pull origin master 
+```
 
 ### Compilation
 
