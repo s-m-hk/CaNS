@@ -52,7 +52,11 @@ program cans
   use mod_initsolver     , only: initsolver
   use mod_load           , only: load
   use mod_rk             , only: rk,rk_scal
-  use mod_output         , only: out0d,out1d,out1d_chan,out2d,out3d,write_log_output,write_visu_2d,write_visu_3d
+  use mod_output         , only: out0d,out1d,out1d_chan, &
+#if defined(_HEAT_TRANSFER)
+                                 out1d_chan_tmp, &
+#endif
+                                 out2d,out3d,write_log_output,write_visu_2d,write_visu_3d
   use mod_param          , only: lz,uref,lref,rey,visc,small, &
 #if defined(_HEAT_TRANSFER)
                                  itmp,tg0,alph_f,alph_s,cbctmp,bctmp, &
@@ -407,6 +411,7 @@ allocate(duconv(n(1),n(2),n(3)), &
     call initflow(inivel,ng,lo,zc/lz,dzc/lz,dzf/lz,visc,u,v,w,p)
 #if defined(_HEAT_TRANSFER)
     call inittmp(itmp,n(1),n(2),n(3),s)
+    if(myid == 0) print*, '*** Heat solver enabled ***'
 #endif
     if(myid == 0) print*, '*** Initial condition successfully set ***'
   else
