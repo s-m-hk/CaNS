@@ -62,10 +62,14 @@ so the libraries are downloaded too. Alternatively, in case the repository has a
 ```bash
 git submodule update --init --recursive
 ```
-Note: the submodules will very likely end up pointing to the specific commit from which they were cloned and not track the branch of the remote repository, putting them in a detached HEAD state. To rectify this, run the following commands to make them track the main remote repository branch:
+Note: the submodules (libraries) will very likely end up pointing to the specific commit from which they were cloned and not track the branch of the remote repository, putting them in a detached HEAD state. To rectify this, run the following commands to make them track the main remote repository branch:
 ```bash
 git submodule foreach git checkout main 
 git submodule foreach git pull origin main 
+```
+If one wishes to have the libraries updated when also updating the code, the following change to Git's configuration can be made
+```bash
+git config --global submodule.recurse true 
 ```
 
 ### Compilation
