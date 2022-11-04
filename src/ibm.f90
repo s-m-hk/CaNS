@@ -58,17 +58,17 @@ end subroutine IBM_Mask
 #endif
 !
 #if defined(_VOLUME)
-subroutine IBM_Mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,is_bound,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag,Level_set,surf_height)
+subroutine IBM_Mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,is_bound,cell_phi_tag,Level_set,surf_height)
 implicit none
 integer ,intent(in), dimension(3) :: n,ng,lo,hi
 logical ,intent(in), dimension(0:1,3) :: is_bound
 real(rp),intent(in), dimension(0:) :: zc,zf,zf_g,dzc,dzf
 real(rp),intent(in), dimension(1:,1:) :: surf_height
 #if defined(_IBM_BC)
-real(rp),intent(out),dimension(-5:,-5:,-5:) :: cell_u_tag, cell_v_tag, cell_w_tag, cell_phi_tag
+real(rp),intent(out),dimension(-5:,-5:,-5:) :: cell_phi_tag
 integer, intent(out),dimension(-5:,-5:,-5:) :: Level_set
 #else
-real(rp),intent(out),dimension(0:,0:,0:) :: cell_u_tag, cell_v_tag, cell_w_tag, cell_phi_tag
+real(rp),intent(out),dimension(0:,0:,0:) :: cell_phi_tag
 integer, intent(out),dimension(0:,0:,0:) :: Level_set
 #endif
 #if !defined(_DECOMP_Z)
@@ -106,7 +106,7 @@ number_of_divisions = 50
 number_of_divisions = 100
 #endif
 if (myid == 0) print*, '*** Calculating volume fractions ***'
-if(trim(surface_type) == 'HeightMap') then ! Only calculate volume fractions in the staggered control volumes separately if a geometric function is used to define the solid, otherwise the cell-center calculated volume fraction should be interpolated onto the face centers.
+if(trim(surface_type) == 'HeightMap') then
 if(.not.is_bound(1,3)) then
 !$acc parallel loop gang collapse(3) default(present) private(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
 do k=1,int(ratio*nz) ! Lower wall
@@ -217,7 +217,7 @@ enddo
 #endif
 endif
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-else ! Objects generated using functions [not GPU driven for now]
+else ! Solids generated using functions [not GPU driven for now]
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 if(.not.is_bound(1,3)) then
 !!$acc parallel loop gang collapse(3) default(present) private(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
@@ -275,117 +275,6 @@ do k=1,int(ratio*nz) ! Lower wall
         enddo
       enddo
      cell_phi_tag(i,j,k) = counter/(1.*number_of_divisions**3) !Solid volume fraction
-
-! u cells
-      inside = .false.
-
-      cell_start_x = (i+lo(1)-1-.5)*dxl
-      cell_end_x   = (i+lo(1)-1+.5)*dxl
-
-      cell_start_y = (j+lo(2)-1-1.)*dyl
-      cell_end_y   = (j+lo(2)-1-.0)*dyl
-
-      cell_start_z = zf(k-1)
-      cell_end_z   = zf(k)
-
-      dxx = (cell_end_x-cell_start_x)/number_of_divisions
-      dyy = (cell_end_y-cell_start_y)/number_of_divisions
-      dzz = (cell_end_z-cell_start_z)/number_of_divisions
-
-      counter = 0
-!      !$acc loop seq
-      do nn= 1,number_of_divisions
-          zzz = cell_start_z+(nn-1)*dzz
-!        !$acc loop seq
-        do m = 1,number_of_divisions
-            yyy = cell_start_y + (m-1)*dyy
-!            !$acc loop seq
-            do l = 1,number_of_divisions
-              xxx = cell_start_x + (l-1)*dxx
-	          if(trim(surface_type) == 'Wall') then
-                  inside = wall(xxx,yyy,zzz,i,j,dzc(k))
-              elseif(trim(surface_type) == 'Sphere') then
-                  inside = sphere(xxx,yyy,zzz,i,j,dzc(k),lo,hi)
-              endif
-              if (inside) counter = counter +1
-            enddo
-        enddo
-      enddo
-      cell_u_tag(i,j,k) = counter/(1._rp*number_of_divisions**3)  !Solid volume fraction
-
-! v cells
-      inside = .false.
-
-      cell_start_x = (i+lo(1)-1-1.)*dxl
-      cell_end_x   = (i+lo(1)-1-.0)*dxl
-
-      cell_start_y = (j+lo(2)-1-.5)*dyl
-      cell_end_y   = (j+lo(2)-1+.5)*dyl
-
-      cell_start_z = zf(k-1)
-      cell_end_z   = zf(k)
-
-      dxx = (cell_end_x-cell_start_x)/number_of_divisions
-      dyy = (cell_end_y-cell_start_y)/number_of_divisions
-      dzz = (cell_end_z-cell_start_z)/number_of_divisions
-
-      counter = 0
-!      !$acc loop seq
-      do nn= 1,number_of_divisions
-          zzz = cell_start_z+(nn-1)*dzz
-!        !$acc loop seq
-        do m = 1,number_of_divisions
-            yyy = cell_start_y + (m-1)*dyy
-!            !$acc loop seq
-            do l = 1,number_of_divisions
-              xxx = cell_start_x + (l-1)*dxx
-	          if(trim(surface_type) == 'Wall') then
-                  inside = wall(xxx,yyy,zzz,i,j,dzc(k))
-              elseif(trim(surface_type) == 'Sphere') then
-                  inside = sphere(xxx,yyy,zzz,i,j,dzc(k),lo,hi)
-              endif
-              if (inside) counter = counter +1
-            enddo
-        enddo
-      enddo
-      cell_v_tag(i,j,k) = counter/(1.*number_of_divisions**3)  !Solid volume fraction
-
-! w cells
-      inside = .false.
-
-      cell_start_x = (i+lo(1)-1-1.)*dxl
-      cell_end_x   = (i+lo(1)-1-.0)*dxl
-
-      cell_start_y = (j+lo(2)-1-1.)*dyl
-      cell_end_y   = (j+lo(2)-1-.0)*dyl
-
-      cell_start_z = zc(k-1)
-      cell_end_z   = zc(k)
-
-      dxx = (cell_end_x-cell_start_x)/number_of_divisions
-      dyy = (cell_end_y-cell_start_y)/number_of_divisions
-      dzz = (cell_end_z-cell_start_z)/number_of_divisions
-
-      counter = 0
-!      !$acc loop seq
-      do nn= 1,number_of_divisions
-          zzz = cell_start_z+(nn-1)*dzz
-!        !$acc loop seq
-        do m = 1,number_of_divisions
-            yyy = cell_start_y + (m-1)*dyy
-!            !$acc loop seq
-            do l = 1,number_of_divisions
-              xxx = cell_start_x + (l-1)*dxx
-	          if(trim(surface_type) == 'Wall') then
-                  inside = wall(xxx,yyy,zzz,i,j,dzc(k))
-              elseif(trim(surface_type) == 'Sphere') then
-                  inside = sphere(xxx,yyy,zzz,i,j,dzc(k),lo,hi)
-              endif
-            if (inside) counter = counter +1
-           enddo
-        enddo
-      enddo
-      cell_w_tag(i,j,k) = counter/(1.*number_of_divisions**3)  !Solid volume fraction
 
     enddo
   enddo
@@ -450,117 +339,6 @@ do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
       enddo
      cell_phi_tag(i,j,k) = counter/(1.*number_of_divisions**3) !Solid volume fraction
 
-! u cells
-      inside = .false.
-
-      cell_start_x = (i+lo(1)-1-.5)*dxl
-      cell_end_x   = (i+lo(1)-1+.5)*dxl
-
-      cell_start_y = (j+lo(2)-1-1.)*dyl
-      cell_end_y   = (j+lo(2)-1-.0)*dyl
-
-      cell_start_z = length_z - zf(k-1)
-      cell_end_z   = length_z - zf(k)
-
-      dxx = (cell_end_x-cell_start_x)/number_of_divisions
-      dyy = (cell_end_y-cell_start_y)/number_of_divisions
-      dzz = (cell_end_z-cell_start_z)/number_of_divisions
-
-      counter = 0
-!      !$acc loop seq
-      do nn= 1,number_of_divisions
-          zzz = cell_start_z+(nn-1)*dzz
-!        !$acc loop seq
-        do m = 1,number_of_divisions
-            yyy = cell_start_y + (m-1)*dyy
-!            !$acc loop seq
-            do l = 1,number_of_divisions
-              xxx = cell_start_x + (l-1)*dxx
-	          if(trim(surface_type) == 'Wall') then
-                  inside = wall(xxx,yyy,zzz,i,j,dzc(k))
-              elseif(trim(surface_type) == 'Sphere') then
-                  inside = sphere(xxx,yyy,zzz,i,j,dzc(k),lo,hi)
-              endif
-              if (inside) counter = counter +1
-            enddo
-        enddo
-      enddo
-      cell_u_tag(i,j,k) = counter/(1._rp*number_of_divisions**3)  !Solid volume fraction
-
-! v cells
-      inside = .false.
-
-      cell_start_x = (i+lo(1)-1-1.)*dxl
-      cell_end_x   = (i+lo(1)-1-.0)*dxl
-
-      cell_start_y = (j+lo(2)-1-.5)*dyl
-      cell_end_y   = (j+lo(2)-1+.5)*dyl
-
-      cell_start_z = length_z - zf(k-1)
-      cell_end_z   = length_z - zf(k)
-
-      dxx = (cell_end_x-cell_start_x)/number_of_divisions
-      dyy = (cell_end_y-cell_start_y)/number_of_divisions
-      dzz = (cell_end_z-cell_start_z)/number_of_divisions
-
-      counter = 0
-!      !$acc loop seq
-      do nn= 1,number_of_divisions
-          zzz = cell_start_z+(nn-1)*dzz
-!        !$acc loop seq
-        do m = 1,number_of_divisions
-            yyy = cell_start_y + (m-1)*dyy
-!            !$acc loop seq
-            do l = 1,number_of_divisions
-              xxx = cell_start_x + (l-1)*dxx
-	          if(trim(surface_type) == 'Wall') then
-                  inside = wall(xxx,yyy,zzz,i,j,dzc(k))
-              elseif(trim(surface_type) == 'Sphere') then
-                  inside = sphere(xxx,yyy,zzz,i,j,dzc(k),lo,hi)
-              endif
-              if (inside) counter = counter +1
-            enddo
-        enddo
-      enddo
-      cell_v_tag(i,j,k) = counter/(1.*number_of_divisions**3)  !Solid volume fraction
-
-! w cells
-      inside = .false.
-
-      cell_start_x = (i+lo(1)-1-1.)*dxl
-      cell_end_x   = (i+lo(1)-1-.0)*dxl
-
-      cell_start_y = (j+lo(2)-1-1.)*dyl
-      cell_end_y   = (j+lo(2)-1-.0)*dyl
-
-      cell_start_z = length_z - zc(k-1)
-      cell_end_z   = length_z - zc(k)
-
-      dxx = (cell_end_x-cell_start_x)/number_of_divisions
-      dyy = (cell_end_y-cell_start_y)/number_of_divisions
-      dzz = (cell_end_z-cell_start_z)/number_of_divisions
-
-      counter = 0
-!      !$acc loop seq
-      do nn= 1,number_of_divisions
-          zzz = cell_start_z+(nn-1)*dzz
-!        !$acc loop seq
-        do m = 1,number_of_divisions
-            yyy = cell_start_y + (m-1)*dyy
-!            !$acc loop seq
-            do l = 1,number_of_divisions
-              xxx = cell_start_x + (l-1)*dxx
-	          if(trim(surface_type) == 'Wall') then
-                  inside = wall(xxx,yyy,zzz,i,j,dzc(k))
-              elseif(trim(surface_type) == 'Sphere') then
-                  inside = sphere(xxx,yyy,zzz,i,j,dzc(k),lo,hi)
-              endif
-            if (inside) counter = counter +1
-           enddo
-        enddo
-      enddo
-      cell_w_tag(i,j,k) = counter/(1.*number_of_divisions**3)  !Solid volume fraction
-
     enddo
   enddo
 enddo
@@ -569,28 +347,12 @@ endif
 !
 endif
 
-if(trim(surface_type) == 'HeightMap') then
-!$acc parallel loop gang collapse(3) default(present) async(1)
-do k=1,nz-1
-  do j=1,ny-1
-    do i=1,nx-1
-     cell_u_tag(i,j,k) = 0.5*(cell_phi_tag(i+1,j,k)+cell_phi_tag(i,j,k))
-     cell_v_tag(i,j,k) = 0.5*(cell_phi_tag(i,j+1,k)+cell_phi_tag(i,j,k))
-     cell_w_tag(i,j,k) = 0.5*(cell_phi_tag(i,j,k+1)+cell_phi_tag(i,j,k))
-    enddo
-   enddo
- enddo
-endif
-
 ! Duplicate volume fractions on the upper part of the domain (symmetric channel)
 #if defined(_DECOMP_Z)
 kk = 1
 !$acc parallel loop gang default(present) async(1)
 do k = nz,(nz-int(ratio*nz)),-1
      cell_phi_tag(1:n(1),1:n(2),k) = cell_phi_tag(1:n(1),1:n(2),kk)
-	 cell_u_tag(1:n(1),1:n(2),k)   = cell_u_tag(1:n(1),1:n(2),kk)
-	 cell_v_tag(1:n(1),1:n(2),k)   = cell_v_tag(1:n(1),1:n(2),kk)
-	 cell_w_tag(1:n(1),1:n(2),k)   = cell_w_tag(1:n(1),1:n(2),kk)
 	 kk = kk + 1
 enddo
 #endif

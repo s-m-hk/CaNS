@@ -28,9 +28,13 @@ subroutine initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,ng,nb,lo,hi,cell_u_tag,c
  real(rp), intent(out),dimension(0:,0:,0:) :: cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag
  real(rp) :: dummy_time
  integer  :: dummy_istep
- integer  :: i,j,k,idir
+ integer  :: i,j,k,nx,ny,nz,idir
  logical  :: is_data
-
+ !
+ nx = n(1)
+ ny = n(2)
+ nz = n(3)
+ !
  inquire(file=trim(datadir)//'IBM.bin',exist=is_data)
 
  if (.not.is_data) then
@@ -40,18 +44,13 @@ subroutine initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,ng,nb,lo,hi,cell_u_tag,c
    cell_w_tag(:,:,:)    = 0._rp
    cell_phi_tag(:,:,:)  = 0._rp
    !
-#if defined(_SIMPLE)
    call IBM_mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,cell_phi_tag)
-#endif
-#if defined(_VOLUME)
-   call IBM_mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,is_bound,cell_phi_tag)
-#endif
    !$acc enter data copyin(cell_phi_tag)
    call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
    !
-   do k=0,n(3)
-    do j=0,n(2)
-     do i=0,n(1)
+   do k=0,nz
+    do j=0,ny
+     do i=0,nx
      if((cell_phi_tag(i,j,k) + cell_phi_tag(i+1,j,k)) > 0.5_rp) cell_u_tag(i,j,k) = 1._rp
      if((cell_phi_tag(i,j,k) + cell_phi_tag(i,j+1,k)) > 0.5_rp) cell_v_tag(i,j,k) = 1._rp
      if((cell_phi_tag(i,j,k) + cell_phi_tag(i,j,k+1)) > 0.5_rp) cell_w_tag(i,j,k) = 1._rp
@@ -84,41 +83,44 @@ subroutine initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,ng,nb,lo,hi,cell_u_tag,c
                    ldz,zc,zf,zf_g,dzc,dzf,dl,dli, &
                    nx_surf,ny_surf,nz_surf,nabs_surf,i_mirror,j_mirror,k_mirror, &
                    i_IP1,j_IP1,k_IP1,i_IP2,j_IP2,k_IP2,WP1,WP2,deltan)
-implicit none
- character(len=1), intent(in), dimension(0:1,3,3)         :: cbcvel
- real(rp), intent(in), dimension(0:1,3,3)                 :: bcvel
- character(len=1), intent(in), dimension(0:1,3)           :: cbcpre
- real(rp), intent(in), dimension(0:1,3)                   :: bcpre
-integer , intent(in), dimension(0:1,3  )                  :: nb
-logical , intent(in), dimension(0:1,3  )                  :: is_bound
-integer , intent(in), dimension(3)                        :: n,ng,lo,hi
-integer , intent(in )                                     :: ldz
-real(rp), intent(in ), dimension(ldz:)                    :: zc,zf,zf_g,dzc,dzf,dl,dli
-real(rp), intent(in ), dimension(1:n(1),1:n(2))           :: surf_height
-#if defined(_IBM_BC)
-real(rp), intent(out),dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) :: cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag
-integer,  intent(out),dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) :: Level_set
-real(rp), dimension(:,:,:), allocatable :: tmp
-#else
-real(rp), intent(out),dimension(0:n(1)+1,0:n(2)+1,0:n(3)+1) :: cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag
-integer,  intent(out),dimension(0:n(1)+1,0:n(2)+1,0:n(3)+1) :: Level_set
-real(rp), dimension(:,:,:), allocatable :: tmp
-#endif
-integer,optional,intent(out),dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) :: i_mirror,j_mirror,k_mirror, &
-                                                                         i_IP1,j_IP1,k_IP1, &
-                                                                         i_IP2,j_IP2,k_IP2
-real(rp), dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6),     intent(out), optional :: nx_surf,ny_surf,nz_surf,nabs_surf,deltan
-real(rp), dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6,1:7), intent(out), optional :: WP1,WP2
-real(rp), dimension(:,:,:), allocatable :: z_intersect(:,:,:),y_intersect(:,:,:), x_intersect(:,:,:)
-real(rp), dimension(:,:,:), allocatable :: x_mirror(:,:,:), y_mirror(:,:,:), z_mirror(:,:,:)
-real(rp), dimension(:,:,:), allocatable :: x_IP1(:,:,:), y_IP1(:,:,:), z_IP1(:,:,:) !can be deallocated later
-real(rp), dimension(:,:,:), allocatable :: x_IP2(:,:,:), y_IP2(:,:,:), z_IP2(:,:,:) !can be deallocated later
-real(rp) :: dummy_time
-integer  :: dummy_istep
-integer  :: i,j,k,h,idir
-logical  :: is_data
-
-inquire(file=trim(datadir)//'IBM.bin',exist=is_data)
+ implicit none
+ character(len=1), intent(in), dimension(0:1,3,3)          :: cbcvel
+ real(rp), intent(in), dimension(0:1,3,3)                  :: bcvel
+ character(len=1), intent(in), dimension(0:1,3)            :: cbcpre
+ real(rp), intent(in), dimension(0:1,3)                    :: bcpre
+ integer , intent(in), dimension(0:1,3  )                  :: nb
+ logical , intent(in), dimension(0:1,3  )                  :: is_bound
+ integer , intent(in), dimension(3)                        :: n,ng,lo,hi
+ integer , intent(in )                                     :: ldz
+ real(rp), intent(in ), dimension(ldz:)                    :: zc,zf,zf_g,dzc,dzf,dl,dli
+ real(rp), intent(in ), dimension(1:n(1),1:n(2))           :: surf_height
+ #if defined(_IBM_BC)
+ real(rp), intent(out),dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) :: cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag
+ integer,  intent(out),dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) :: Level_set
+ #else
+ real(rp), intent(out),dimension(0:n(1)+1,0:n(2)+1,0:n(3)+1) :: cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag
+ integer,  intent(out),dimension(0:n(1)+1,0:n(2)+1,0:n(3)+1) :: Level_set
+ #endif
+ real(rp), dimension(:,:,:), allocatable :: tmp
+ integer,optional,intent(out),dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) :: i_mirror,j_mirror,k_mirror, &
+                                                                          i_IP1,j_IP1,k_IP1, &
+                                                                          i_IP2,j_IP2,k_IP2
+ real(rp), dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6),     intent(out), optional :: nx_surf,ny_surf,nz_surf,nabs_surf,deltan
+ real(rp), dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6,1:7), intent(out), optional :: WP1,WP2
+ real(rp), dimension(:,:,:), allocatable :: z_intersect(:,:,:),y_intersect(:,:,:), x_intersect(:,:,:)
+ real(rp), dimension(:,:,:), allocatable :: x_mirror(:,:,:), y_mirror(:,:,:), z_mirror(:,:,:)
+ real(rp), dimension(:,:,:), allocatable :: x_IP1(:,:,:), y_IP1(:,:,:), z_IP1(:,:,:) !can be deallocated later
+ real(rp), dimension(:,:,:), allocatable :: x_IP2(:,:,:), y_IP2(:,:,:), z_IP2(:,:,:) !can be deallocated later
+ real(rp) :: dummy_time
+ integer  :: dummy_istep
+ integer  :: i,j,k,nx,ny,nz,h,idir
+ logical  :: is_data
+ !
+ nx = n(1)
+ ny = n(2)
+ nz = n(3)
+ !
+ inquire(file=trim(datadir)//'IBM.bin',exist=is_data)
 
 if (.not.is_data) then
 #if defined(_IBM_BC)
@@ -131,6 +133,8 @@ if (.not.is_data) then
   allocate(x_IP2(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), y_IP2(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
            z_IP2(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6))
   allocate(tmp(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6))
+#else
+  allocate(tmp(-1:n(1)+1,-1:n(2)+1,-1:n(3)+1))
 #endif
 
   cell_u_tag(:,:,:)    = 0.
@@ -138,25 +142,10 @@ if (.not.is_data) then
   cell_w_tag(:,:,:)    = 0.
   cell_phi_tag(:,:,:)  = 0.
   Level_set(:,:,:)     = 0
-  !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag,Level_set)
-  call IBM_mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,is_bound,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag,Level_set,surf_height)
 
-#if defined(_IBM_BC)
-       tmp(:,:,:) = real(Level_set(:,:,:),rp)
-       call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
-       call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
-  if (myid == 0)  print*, '*** Volume fractions have been calculated! ***'
-  !---------------------------------------------------------------------
-       call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,tmp)
-       Level_set(:,:,:) = int(tmp(:,:,:),i8)
-  if (myid == 0)  print*, '*** Solid marker has been calculated! ***'
-  !---------------------------------------------------------------------
-#else
-       call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
-       call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
-   if (myid == 0)  print*, '*** Volume fractions have been calculated! ***'
-  !---------------------------------------------------------------------
-       allocate(tmp(-1:n(1)+1,-1:n(2)+1,-1:n(3)+1))
+  !$acc enter data copyin(cell_phi_tag,Level_set)
+  call IBM_mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,is_bound,cell_phi_tag,Level_set,surf_height)
+
       !$acc enter data copyin(tmp)
        tmp(:,:,:) = real(Level_set(:,:,:),rp)
        call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,tmp)
@@ -164,7 +153,22 @@ if (.not.is_data) then
       !$acc exit data copyout(tmp) async ! not needed on the device
    if (myid == 0)  print*, '*** Solid marker has been calculated! ***'
   !---------------------------------------------------------------------
-#endif
+       call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
+       !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag)
+       !$acc parallel loop gang collapse(3) default(present) async(1)
+       do k=0,nz
+        do j=0,ny
+         do i=0,nx
+          cell_u_tag(i,j,k) = 0.5*(cell_phi_tag(i+1,j,k)+cell_phi_tag(i,j,k))
+          cell_v_tag(i,j,k) = 0.5*(cell_phi_tag(i,j+1,k)+cell_phi_tag(i,j,k))
+          cell_w_tag(i,j,k) = 0.5*(cell_phi_tag(i,j,k+1)+cell_phi_tag(i,j,k))
+         enddo
+        enddo
+       enddo
+       call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
+   if (myid == 0)  print*, '*** Volume fractions have been calculated! ***'
+  !---------------------------------------------------------------------
+
 #if defined(_IBM_BC)
   nx_surf(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6)      = 0.
   ny_surf(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6)      = 0.
@@ -289,7 +293,7 @@ deallocate(x_mirror,y_mirror,z_mirror)
 
   if (myid.eq.0)  print*, '*** Interpolation Weights have been calculated! ***'
 
-  deallocate(x_IP1,x_IP2,y_IP1,y_IP2,z_IP1,z_IP2)
+  deallocate(x_IP1,x_IP2,y_IP1,y_IP2,z_IP1,z_IP2,tmp)
 #endif
 #if defined(_IBM_BC)
   call loadIBM('w',trim(datadir)//'IBM.bin',n,cell_phi_tag,cell_u_tag,cell_v_tag,cell_w_tag,level_set,nx_surf, &
