@@ -6,13 +6,13 @@
 ! -
 module mod_bound
   use mpi
-  use mod_common_mpi, only: ierr,halo,halo_big,ipencil_axis
+  use mod_common_mpi, only: ierr,ipencil_axis
   use mod_types
   implicit none
   private
   public boundp,bounduvw,updt_rhs_b,updthalo
   contains
-  subroutine bounduvw(cbc,n,bc,nb,is_bound,is_correc,dl,dzc,dzf,u,v,w)
+  subroutine bounduvw(cbc,n,nh,halo,bc,nb,is_bound,is_correc,dl,dzc,dzf,u,v,w)
     !
     ! imposes velocity boundary conditions
     !
@@ -21,15 +21,17 @@ module mod_bound
     integer , intent(in), dimension(3) :: n
     real(rp), intent(in), dimension(0:1,3,3) :: bc
     integer , intent(in), dimension(0:1,3  ) :: nb
+    integer , intent(in)                     :: nh
+    integer , intent(in), dimension(3)       :: halo
     logical , intent(in), dimension(0:1,3  ) :: is_bound
     logical , intent(in)                     :: is_correc
     real(rp), intent(in), dimension(3 ) :: dl
     real(rp), intent(in), dimension(0:) :: dzc,dzf
     real(rp), intent(inout), dimension(0:,0:,0:) :: u,v,w
     logical :: impose_norm_bc
-    integer :: idir,nh
+    integer :: idir,h
     !
-    nh = 1
+    ! nh = 1
     !
 #if !defined(_OPENACC)
     do idir = 1,3
@@ -78,7 +80,7 @@ module mod_bound
     end if
   end subroutine bounduvw
   !
-  subroutine boundp(cbc,n,bc,nb,is_bound,dl,dzc,p)
+  subroutine boundp(cbc,n,nh,halo,bc,nb,is_bound,dl,dzc,p)
     !
     ! imposes pressure boundary conditions
     !
@@ -87,13 +89,15 @@ module mod_bound
     integer , intent(in), dimension(3) :: n
     real(rp), intent(in), dimension(0:1,3) :: bc
     integer , intent(in), dimension(0:1,3) :: nb
+    integer , intent(in)                   :: nh
+    integer , intent(in), dimension(3)     :: halo
     logical , intent(in), dimension(0:1,3) :: is_bound
     real(rp), intent(in), dimension(3 ) :: dl
     real(rp), intent(in), dimension(0:) :: dzc
     real(rp), intent(inout), dimension(0:,0:,0:) :: p
-    integer :: idir,nh
+    integer :: idir,h
     !
-    nh = 1
+    ! nh = 1
     !
 #if !defined(_OPENACC)
     do idir = 1,3
@@ -457,64 +461,67 @@ module mod_bound
     integer , intent(in) :: idir
     real(rp), dimension(1-nh:,1-nh:,1-nh:), intent(inout) :: p
     integer , dimension(3) :: lo,hi
+    integer                :: h
     !integer :: requests(4)
     !
     !  this subroutine updates the halo that store info
     !  from the neighboring computational sub-domain
     !
     if(idir == ipencil_axis) return
-    lo(:) = lbound(p)+nh
-    hi(:) = ubound(p)-nh
-    select case(idir)
-    case(1) ! x direction
-      call MPI_SENDRECV(p(lo(1)     ,lo(2)-nh,lo(3)-nh),1,halo,nb(0),0, &
-                        p(hi(1)+1   ,lo(2)-nh,lo(3)-nh),1,halo,nb(1),0, &
-                        MPI_COMM_WORLD,MPI_STATUS_IGNORE,ierr)
-      call MPI_SENDRECV(p(hi(1)-nh+1,lo(2)-nh,lo(3)-nh),1,halo,nb(1),0, &
-                        p(lo(1)-nh  ,lo(2)-nh,lo(3)-nh),1,halo,nb(0),0, &
-                        MPI_COMM_WORLD,MPI_STATUS_IGNORE,ierr)
-      !call MPI_IRECV( p(hi(1)+1   ,lo(2)-nh,lo(3)-nh),1,halo,nb(1),0, &
-      !                MPI_COMM_WORLD,requests(1),ierr)
-      !call MPI_IRECV( p(lo(1)-nh  ,lo(2)-nh,lo(3)-nh),1,halo,nb(0),1, &
-      !                MPI_COMM_WORLD,requests(2),ierr)
-      !call MPI_ISSEND(p(lo(1)     ,lo(2)-nh,lo(3)-nh),1,halo,nb(0),0, &
-      !                MPI_COMM_WORLD,requests(3),ierr)
-      !call MPI_ISSEND(p(hi(1)-nh+1,lo(2)-nh,lo(3)-nh),1,halo,nb(1),1, &
-      !                MPI_COMM_WORLD,requests(4),ierr)
-      !call MPI_WAITALL(4,requests,MPI_STATUSES_IGNORE,ierr)
-    case(2) ! y direction
-      call MPI_SENDRECV(p(lo(1)-nh,lo(2)     ,lo(3)-nh),1,halo,nb(0),0, &
-                        p(lo(1)-nh,hi(2)+1   ,lo(3)-nh),1,halo,nb(1),0, &
-                        MPI_COMM_WORLD,MPI_STATUS_IGNORE,ierr)
-      call MPI_SENDRECV(p(lo(1)-nh,hi(2)-nh+1,lo(3)-nh),1,halo,nb(1),0, &
-                        p(lo(1)-nh,lo(2)-nh  ,lo(3)-nh),1,halo,nb(0),0, &
-                        MPI_COMM_WORLD,MPI_STATUS_IGNORE,ierr)
-      !call MPI_IRECV( p(lo(1)-nh,hi(2)+1   ,lo(3)-nh),1,halo,nb(1),0, &
-      !                MPI_COMM_WORLD,requests(1),ierr)
-      !call MPI_IRECV( p(lo(1)-nh,lo(2)-nh  ,lo(3)-nh),1,halo,nb(0),1, &
-      !                MPI_COMM_WORLD,requests(2),ierr)
-      !call MPI_ISSEND(p(lo(1)-nh,lo(2)     ,lo(3)-nh),1,halo,nb(0),0, &
-      !                MPI_COMM_WORLD,requests(3),ierr)
-      !call MPI_ISSEND(p(lo(1)-nh,hi(2)-nh+1,lo(3)-nh),1,halo,nb(1),1, &
-      !                MPI_COMM_WORLD,requests(4),ierr)
-      !call MPI_WAITALL(4,requests,MPI_STATUSES_IGNORE,ierr)
-    case(3) ! z direction
-      call MPI_SENDRECV(p(lo(1)-nh,lo(2)-nh,lo(3)     ),1,halo,nb(0),0, &
-                        p(lo(1)-nh,lo(2)-nh,hi(3)+1   ),1,halo,nb(1),0, &
-                        MPI_COMM_WORLD,MPI_STATUS_IGNORE,ierr)
-      call MPI_SENDRECV(p(lo(1)-nh,lo(2)-nh,hi(3)-nh+1),1,halo,nb(1),0, &
-                        p(lo(1)-nh,lo(2)-nh,lo(3)-nh  ),1,halo,nb(0),0, &
-                        MPI_COMM_WORLD,MPI_STATUS_IGNORE,ierr)
-      !call MPI_IRECV( p(lo(1)-nh,lo(2)-nh,hi(3)+1   ),1,halo,nb(1),0, &
-      !                MPI_COMM_WORLD,requests(1),ierr)
-      !call MPI_IRECV( p(lo(1)-nh,lo(2)-nh,lo(3)-nh  ),1,halo,nb(0),1, &
-      !                MPI_COMM_WORLD,requests(2),ierr)
-      !call MPI_ISSEND(p(lo(1)-nh,lo(2)-nh,lo(3)     ),1,halo,nb(0),0, &
-      !                MPI_COMM_WORLD,requests(3),ierr)
-      !call MPI_ISSEND(p(lo(1)-nh,lo(2)-nh,hi(3)-nh+1),1,halo,nb(1),1, &
-      !                MPI_COMM_WORLD,requests(4),ierr)
-      !call MPI_WAITALL(4,requests,MPI_STATUSES_IGNORE,ierr)
-    end select
+    do h=1,nh
+     lo(:) = lbound(p)+h
+     hi(:) = ubound(p)-h
+     select case(idir)
+     case(1) ! x direction
+       call MPI_SENDRECV(p(lo(1)     ,lo(2)-nh,lo(3)-nh),1,halo,nb(0),0, &
+                         p(hi(1)+1   ,lo(2)-nh,lo(3)-nh),1,halo,nb(1),0, &
+                         MPI_COMM_WORLD,MPI_STATUS_IGNORE,ierr)
+       call MPI_SENDRECV(p(hi(1)-nh+1,lo(2)-nh,lo(3)-nh),1,halo,nb(1),0, &
+                         p(lo(1)-nh  ,lo(2)-nh,lo(3)-nh),1,halo,nb(0),0, &
+                         MPI_COMM_WORLD,MPI_STATUS_IGNORE,ierr)
+       !call MPI_IRECV( p(hi(1)+1   ,lo(2)-nh,lo(3)-nh),1,halo,nb(1),0, &
+       !                MPI_COMM_WORLD,requests(1),ierr)
+       !call MPI_IRECV( p(lo(1)-nh  ,lo(2)-nh,lo(3)-nh),1,halo,nb(0),1, &
+       !                MPI_COMM_WORLD,requests(2),ierr)
+       !call MPI_ISSEND(p(lo(1)     ,lo(2)-nh,lo(3)-nh),1,halo,nb(0),0, &
+       !                MPI_COMM_WORLD,requests(3),ierr)
+       !call MPI_ISSEND(p(hi(1)-nh+1,lo(2)-nh,lo(3)-nh),1,halo,nb(1),1, &
+       !                MPI_COMM_WORLD,requests(4),ierr)
+       !call MPI_WAITALL(4,requests,MPI_STATUSES_IGNORE,ierr)
+     case(2) ! y direction
+       call MPI_SENDRECV(p(lo(1)-nh,lo(2)     ,lo(3)-nh),1,halo,nb(0),0, &
+                         p(lo(1)-nh,hi(2)+1   ,lo(3)-nh),1,halo,nb(1),0, &
+                         MPI_COMM_WORLD,MPI_STATUS_IGNORE,ierr)
+       call MPI_SENDRECV(p(lo(1)-nh,hi(2)-nh+1,lo(3)-nh),1,halo,nb(1),0, &
+                         p(lo(1)-nh,lo(2)-nh  ,lo(3)-nh),1,halo,nb(0),0, &
+                         MPI_COMM_WORLD,MPI_STATUS_IGNORE,ierr)
+       !call MPI_IRECV( p(lo(1)-nh,hi(2)+1   ,lo(3)-nh),1,halo,nb(1),0, &
+       !                MPI_COMM_WORLD,requests(1),ierr)
+       !call MPI_IRECV( p(lo(1)-nh,lo(2)-nh  ,lo(3)-nh),1,halo,nb(0),1, &
+       !                MPI_COMM_WORLD,requests(2),ierr)
+       !call MPI_ISSEND(p(lo(1)-nh,lo(2)     ,lo(3)-nh),1,halo,nb(0),0, &
+       !                MPI_COMM_WORLD,requests(3),ierr)
+       !call MPI_ISSEND(p(lo(1)-nh,hi(2)-nh+1,lo(3)-nh),1,halo,nb(1),1, &
+       !                MPI_COMM_WORLD,requests(4),ierr)
+       !call MPI_WAITALL(4,requests,MPI_STATUSES_IGNORE,ierr)
+     case(3) ! z direction
+       call MPI_SENDRECV(p(lo(1)-nh,lo(2)-nh,lo(3)     ),1,halo,nb(0),0, &
+                         p(lo(1)-nh,lo(2)-nh,hi(3)+1   ),1,halo,nb(1),0, &
+                         MPI_COMM_WORLD,MPI_STATUS_IGNORE,ierr)
+       call MPI_SENDRECV(p(lo(1)-nh,lo(2)-nh,hi(3)-nh+1),1,halo,nb(1),0, &
+                         p(lo(1)-nh,lo(2)-nh,lo(3)-nh  ),1,halo,nb(0),0, &
+                         MPI_COMM_WORLD,MPI_STATUS_IGNORE,ierr)
+       !call MPI_IRECV( p(lo(1)-nh,lo(2)-nh,hi(3)+1   ),1,halo,nb(1),0, &
+       !                MPI_COMM_WORLD,requests(1),ierr)
+       !call MPI_IRECV( p(lo(1)-nh,lo(2)-nh,lo(3)-nh  ),1,halo,nb(0),1, &
+       !                MPI_COMM_WORLD,requests(2),ierr)
+       !call MPI_ISSEND(p(lo(1)-nh,lo(2)-nh,lo(3)     ),1,halo,nb(0),0, &
+       !                MPI_COMM_WORLD,requests(3),ierr)
+       !call MPI_ISSEND(p(lo(1)-nh,lo(2)-nh,hi(3)-nh+1),1,halo,nb(1),1, &
+       !                MPI_COMM_WORLD,requests(4),ierr)
+       !call MPI_WAITALL(4,requests,MPI_STATUSES_IGNORE,ierr)
+     end select
+    enddo
   end subroutine updthalo
 #if defined(_OPENACC)
   subroutine updthalo_gpu(nh,periods,p)

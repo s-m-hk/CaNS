@@ -7,7 +7,7 @@
 module mod_initmpi
   use mpi
   use decomp_2d
-  use mod_common_mpi, only: myid,ierr,halo,ipencil => ipencil_axis
+  use mod_common_mpi, only: myid,ierr,halo,halo_s,halo_big,ipencil => ipencil_axis
   use mod_types
   !@acc use openacc
   !@acc use cudecomp
@@ -185,6 +185,9 @@ module mod_initmpi
     n_z(:)     = zsize(:)
     do l=1,3
       call makehalo(l,1,n(:),halo(l))
+#if defined(_HEAT_TRANSFER)
+      call makehalo(l,3,n(:),halo_s(l))
+#endif
 #if defined(_IBM_BC)
       call makehalo(l,6,n(:),halo_big(l))
 #endif

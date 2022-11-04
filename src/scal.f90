@@ -5,33 +5,38 @@
 !
 ! -
 module mod_scal
-  use mod_types
+  use mod_gradls ,only: weno5
+  use mod_types, only: rp
   implicit none
   private
   public scal
   contains
-  subroutine scal(nx,ny,nz,dxi,dyi,dzi,dzci,dzfi,alph_f,alph_s, &
+  subroutine scal(nx,ny,nz,dxi,dyi,dzi,dzci,dzfi,alph_f,alph_s,alph, &
 #if defined(_IBM)
                   psi, &
 #endif
                   u,v,w,s,dsdt)
     !
-    !
-    !
     implicit none
     integer , intent(in) :: nx,ny,nz
     real(rp), intent(in) :: dxi,dyi,dzi,alph_f,alph_s
     real(rp), intent(in), dimension(0:) :: dzci,dzfi
-    real(rp), dimension(0:,0:,0:), intent(in) :: u,v,w,s
+    real(rp), dimension(0:,0:,0:), intent(in) :: alph
+    real(rp), dimension(0:,0:,0:), intent(in) :: u,v,w
+    real(rp), dimension(-2:,-2:,-2:), intent(in) :: s
 #if defined(_IBM)
     real(rp), intent(in), dimension(0:,0:,0:) :: psi
 #endif
     real(rp), dimension(:,:,:), intent(out) :: dsdt
     integer :: i,j,k
     real(rp) :: usip,usim,vsjp,vsjm,wskp,wskm
-    real(rp) :: dsdxp,dsdxm,dsdyp,dsdym,dsdzp,dsdzm
+    real(rp) :: dsdip,dsdim,dsdjp,dsdjm,dsdkp,dsdkm,dsdtd_xy,dsdtd_z,dsdta,dsdt_s
+    real(rp) :: psis,psisip,psisim,psisjp,psisjm,psiskp,psiskm
+    real(rp) :: alphip,alphim,alphjp,alphjm,alphkp,alphkm
     !
-    !$acc parallel loop collapse(3) default(present) private(usip,usim,vsjp,vsjm,wskp,wskm,dsdxp,dsdxm,dsdyp,dsdym,dsdzp,dsdzm) async(1)
+    ! call weno5(nx,ny,nz,dxi,dyi,dzi,s,u,v,w,dsdt)
+    !
+    !$acc parallel loop collapse(3) default(present) private(psis,psisip,psisim,psisjp,psisjm,psiskp,psiskm,alphip,alphim,alphjp,alphjm,alphkp,alphkm,usip,usim,vsjp,vsjm,wskp,wskm,dsdip,dsdim,dsdjp,dsdjm,dsdkp,dsdkm,dsdtd_xy,dsdtd_z,dsdta,dsdt_s) async(1)
     !$OMP PARALLEL DO DEFAULT(none) &
     !$OMP PRIVATE(usip,usim,vsjp,vsjm,wskp,wskm) &
     !$OMP PRIVATE(dsdxp,dsdxm,dsdyp,dsdym,dsdzp,dsdzm) &
@@ -39,53 +44,77 @@ module mod_scal
     do k=1,nz
       do j=1,ny
         do i=1,nx
-#if defined(_IBM) && defined(_SIMPLE) && defined(_ISOTHERMAL)
-          if (psi(i,j,k) == 0.) then ! if not in solid
-              if (psi(i+1,j,k) == 1.) s(i+1,j,k) = 2.*solidtemp; s(i,j,k) = 2.*s(i,j,k)
-              if (psi(i-1,j,k) == 1.) s(i-1,j,k) = 2.*solidtemp; s(i,j,k) = 2.*s(i,j,k)
-              if (psi(i,j+1,k) == 1.) s(i,j+1,k) = 2.*solidtemp; s(i,j,k) = 2.*s(i,j,k)
-              if (psi(i,j-1,k) == 1.) s(i,j-1,k) = 2.*solidtemp; s(i,j,k) = 2.*s(i,j,k)
-              if (psi(i,j,k+1) == 1.) s(i,j,k+1) = 2.*solidtemp; s(i,j,k) = 2.*s(i,j,k)
-              if (psi(i,j,k-1) == 1.) s(i,j,k-1) = 2.*solidtemp; s(i,j,k) = 2.*s(i,j,k)
-          endif
-#endif
-          usim  = 0.5*( s(i-1,j,k)+s(i,j,k) )*u(i-1,j,k)
-          usip  = 0.5*( s(i+1,j,k)+s(i,j,k) )*u(i  ,j,k)
-          vsjm  = 0.5*( s(i,j-1,k)+s(i,j,k) )*v(i,j-1,k)
-          vsjp  = 0.5*( s(i,j+1,k)+s(i,j,k) )*v(i,j  ,k)
-          wskm  = 0.5*( s(i,j,k-1)+s(i,j,k) )*w(i,j,k-1)
-          wskp  = 0.5*( s(i,j,k+1)+s(i,j,k) )*w(i,j,k  )
-#if defined(_IBM) && defined(_SIMPLE) && defined(_ISOTHERMAL)
-          if (psi(i,j,k) == 0.) then ! if not in solid
-              if (psi(i+1,j,k) == 1.) usip = solidtemp*u(i ,j,k)
-              if (psi(i-1,j,k) == 1.) usim = solidtemp*u(i-1,j,k)
-              if (psi(i,j+1,k) == 1.) vsjp = solidtemp*v(i,j ,k)
-              if (psi(i,j-1,k) == 1.) vsjm = solidtemp*v(i,j-1,k)
-              if (psi(i,j,k+1) == 1.) wskp = solidtemp*w(i,j,k )
-              if (psi(i,j,k-1) == 1.) wskm = solidtemp*w(i,j,k-1)
-          endif
-#endif
-          dsdxp = (s(i+1,j,k)-s(i  ,j,k))*dxi
-          dsdxm = (s(i  ,j,k)-s(i-1,j,k))*dxi
-          dsdyp = (s(i,j+1,k)-s(i,j  ,k))*dyi
-          dsdym = (s(i,j  ,k)-s(i,j-1,k))*dyi
-          dsdzp = (s(i,j,k+1)-s(i,j,k  ))*dzci(k  )
-          dsdzm = (s(i,j,k  )-s(i,j,k-1))*dzci(k-1)
-          !
 #if defined(_IBM) && defined(_SIMPLE)
-          dsdt(i,j,k) = dxi*(     -usip + usim ) + (dsdxp-dsdxm)* &
-                        ( (1. - psi(i,j,k)) * alph_f + psi(i,j,k) * alph_s )*dxi + &
-                        dyi*(     -vsjp + vsjm ) + (dsdyp-dsdym)* &
-                        ( (1. - psi(i,j,k)) * alph_f + psi(i,j,k) * alph_s )*dyi + &
-                        dzfi(k)*( -wskp + wskm ) + (dsdzp-dsdzm)* &
-                        ( (1. - psi(i,j,k)) * alph_f + psi(i,j,k) * alph_s )*dzfi(k)
-#else
-          dsdt(i,j,k) = dxi*(     -usip + usim ) + (dsdxp-dsdxm)*alph_f*dxi + &
-                        dyi*(     -vsjp + vsjm ) + (dsdyp-dsdym)*alph_f*dyi + &
-                        dzfi(k)*( -wskp + wskm ) + (dsdzp-dsdzm)*alph_f*dzfi(k)
+         alphip = 0.5_rp*(alph(i+1,j,k)+alph(i,j,k))
+         alphim = 0.5_rp*(alph(i-1,j,k)+alph(i,j,k))
+         alphjp = 0.5_rp*(alph(i,j+1,k)+alph(i,j,k))
+         alphjm = 0.5_rp*(alph(i,j-1,k)+alph(i,j,k))
+         alphkp = 0.5_rp*(alph(i,j,k+1)+alph(i,j,k))
+         alphkm = 0.5_rp*(alph(i,j,k-1)+alph(i,j,k))
+         !
+         psis   = psi(i,j,k)
+         psisip = psi(i+1,j,k)
+         psisim = psi(i-1,j,k)
+         psisjp = psi(i,j+1,k)
+         psisjm = psi(i,j-1,k)
+         psiskp = psi(i,j,k+1)
+         psiskm = psi(i,j,k-1)
 #endif
+         !
+         dsdip = (s(i+1,j,k)-s(i  ,j,k))*dxi
+         dsdim = (s(i  ,j,k)-s(i-1,j,k))*dxi
+         dsdjp = (s(i,j+1,k)-s(i,j  ,k))*dyi
+         dsdjm = (s(i,j  ,k)-s(i,j-1,k))*dyi
+         dsdkp = (s(i,j,k+1)-s(i,j,k  ))*dzci(k  )
+         dsdkm = (s(i,j,k  )-s(i,j,k-1))*dzci(k-1)
+         !
+#if defined(_IBM) && defined(_SIMPLE) && defined(_ISOTHERMAL)
+         if (psis == 0.) then ! if not in solid
+          if (psisip == 1.) s(i+1,j,k) = 2._rp*solidtemp; s(i,j,k) = 2._rp*s(i,j,k)
+          if (psisim == 1.) s(i-1,j,k) = 2._rp*solidtemp; s(i,j,k) = 2._rp*s(i,j,k)
+          if (psisjp == 1.) s(i,j+1,k) = 2._rp*solidtemp; s(i,j,k) = 2._rp*s(i,j,k)
+          if (psisjm == 1.) s(i,j-1,k) = 2._rp*solidtemp; s(i,j,k) = 2._rp*s(i,j,k)
+          if (psiskp == 1.) s(i,j,k+1) = 2._rp*solidtemp; s(i,j,k) = 2._rp*s(i,j,k)
+          if (psiskm == 1.) s(i,j,k-1) = 2._rp*solidtemp; s(i,j,k) = 2._rp*s(i,j,k)
+         endif
+#endif
+         !
+         usip  = 0.5_rp*( s(i+1,j,k)+s(i,j,k) )*u(i  ,j,k)
+         usim  = 0.5_rp*( s(i-1,j,k)+s(i,j,k) )*u(i-1,j,k)
+         vsjp  = 0.5_rp*( s(i,j+1,k)+s(i,j,k) )*v(i,j  ,k)
+         vsjm  = 0.5_rp*( s(i,j-1,k)+s(i,j,k) )*v(i,j-1,k)
+         wskp  = 0.5_rp*( s(i,j,k+1)+s(i,j,k) )*w(i,j,k  )
+         wskm  = 0.5_rp*( s(i,j,k-1)+s(i,j,k) )*w(i,j,k-1)
+         !
+#if defined(_IBM) && defined(_SIMPLE) && defined(_ISOTHERMAL)
+         if (psis == 0.) then ! if not in solid
+          if (psisip == 1.) usip = solidtemp*u(i ,j,k)
+          if (psisim == 1.) usim = solidtemp*u(i-1,j,k)
+          if (psisjp == 1.) vsjp = solidtemp*v(i,j ,k)
+          if (psisjm == 1.) vsjm = solidtemp*v(i,j-1,k)
+          if (psiskp == 1.) wskp = solidtemp*w(i,j,k )
+          if (psiskm == 1.) wskm = solidtemp*w(i,j,k-1)
+#endif
+#if defined(_IBM) && defined(_SIMPLE) && !defined(_ISOTHERMAL)
+         dsdtd_xy = (alphip*dsdip-alphim*dsdim)*dxi + &
+                    (alphjp*dsdjp-alphjm*dsdjm)*dyi
+         dsdtd_z  = (alphkp*dsdkp-alphkm*dsdkm)*dzfi(k)
+         dsdta    = - ( usip - usim )*dxi &    
+                    - ( vsjp - vsjm )*dyi &    
+                    - ( wskp - wskm )*dzfi(k)
+#else
+         dsdtd_xy = alph_f*(dsdip-dsdim)*dxi + &
+                    alph_f*(dsdjp-dsdjm)*dyi
+         dsdtd_z  = alph_f*(dsdkp-dsdkm)*dzfi(k)
+         dsdta    = - ( usip - usim )*dxi &    
+                    - ( vsjp - vsjm )*dyi &    
+                    - ( wskp - wskm )*dzfi(k)
+#endif
+         dsdt_s = dsdta + dsdtd_xy + dsdtd_z
+         dsdt(i,j,k) = dsdt_s
         end do
       end do
     end do
+    !
   end subroutine scal
 end module mod_scal

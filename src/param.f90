@@ -112,15 +112,15 @@ contains
         read(iunit,*,iostat=ierr) cbcvel(0,1,2),cbcvel(1,1,2),cbcvel(0,2,2),cbcvel(1,2,2),cbcvel(0,3,2),cbcvel(1,3,2)
         read(iunit,*,iostat=ierr) cbcvel(0,1,3),cbcvel(1,1,3),cbcvel(0,2,3),cbcvel(1,2,3),cbcvel(0,3,3),cbcvel(1,3,3)
         read(iunit,*,iostat=ierr) cbcpre(0,1  ),cbcpre(1,1  ),cbcpre(0,2  ),cbcpre(1,2  ),cbcpre(0,3  ),cbcpre(1,3  )
-        read(iunit,*,iostat=ierr)  bcvel(0,1,1), bcvel(1,1,1), bcvel(0,2,1), bcvel(1,2,1), bcvel(0,3,1), bcvel(1,3,1)
-        read(iunit,*,iostat=ierr)  bcvel(0,1,2), bcvel(1,1,2), bcvel(0,2,2), bcvel(1,2,2), bcvel(0,3,2), bcvel(1,3,2)
-        read(iunit,*,iostat=ierr)  bcvel(0,1,3), bcvel(1,1,3), bcvel(0,2,3), bcvel(1,2,3), bcvel(0,3,3), bcvel(1,3,3)
-        read(iunit,*,iostat=ierr)  bcpre(0,1  ), bcpre(1,1  ), bcpre(0,2  ), bcpre(1,2  ), bcpre(0,3  ), bcpre(1,3  )
-        read(iunit,*,iostat=ierr)  gacc(1), gacc(2), gacc(3)
-        read(iunit,*,iostat=ierr)  bforce(1),bforce(2),bforce(3)
-        read(iunit,*,iostat=ierr)  is_forced(1),is_forced(2),is_forced(3)
-        read(iunit,*,iostat=ierr)  velf(1),velf(2),velf(3)
-        read(iunit,*,iostat=ierr)  dims(1),dims(2)
+        read(iunit,*,iostat=ierr) bcvel(0,1,1), bcvel(1,1,1), bcvel(0,2,1), bcvel(1,2,1), bcvel(0,3,1), bcvel(1,3,1)
+        read(iunit,*,iostat=ierr) bcvel(0,1,2), bcvel(1,1,2), bcvel(0,2,2), bcvel(1,2,2), bcvel(0,3,2), bcvel(1,3,2)
+        read(iunit,*,iostat=ierr) bcvel(0,1,3), bcvel(1,1,3), bcvel(0,2,3), bcvel(1,2,3), bcvel(0,3,3), bcvel(1,3,3)
+        read(iunit,*,iostat=ierr) bcpre(0,1  ), bcpre(1,1  ), bcpre(0,2  ), bcpre(1,2  ), bcpre(0,3  ), bcpre(1,3  )
+        read(iunit,*,iostat=ierr) gacc(1), gacc(2), gacc(3)
+        read(iunit,*,iostat=ierr) bforce(1),bforce(2),bforce(3)
+        read(iunit,*,iostat=ierr) is_forced(1),is_forced(2),is_forced(3)
+        read(iunit,*,iostat=ierr) velf(1),velf(2),velf(3)
+        read(iunit,*,iostat=ierr) dims(1),dims(2)
       else
         if(myid == 0) print*, 'Error reading main input file'
         if(myid == 0) print*, 'Aborting...'
@@ -165,7 +165,7 @@ contains
       read(iunit,*,iostat=ierr) solidtemp
       read(iunit,*,iostat=ierr) is_forced(4)
     else
-      if(myid == 0) print*, 'Error reading thermal input file' 
+      if(myid == 0) print*, 'Error reading heat input file' 
       if(myid == 0) print*, 'Aborting...'
       call MPI_FINALIZE(ierr)
       call exit
@@ -245,7 +245,7 @@ contains
             end select
           end if
         else
-          if(myid == 0) print*, 'Error reading the input file'
+          if(myid == 0) print*, 'Error reading cuDecomp input file'
           if(myid == 0) print*, 'Aborting...'
           call MPI_FINALIZE(ierr)
           error stop

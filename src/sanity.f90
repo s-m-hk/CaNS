@@ -10,7 +10,7 @@ module mod_sanity
   use decomp_2d
   use mod_bound     , only: boundp,bounduvw,updt_rhs_b
   use mod_chkdiv    , only: chkdiv
-  use mod_common_mpi, only: myid,ierr,ipencil_axis
+  use mod_common_mpi, only: myid,ierr,halo,ipencil_axis
   use mod_correc    , only: correc
   use mod_debug     , only: chk_helmholtz
   use mod_fft       , only: fftend
@@ -268,13 +268,13 @@ module mod_sanity
     dl  = dli**(-1)
     dt  = acos(-1.) ! value is irrelevant
     dti = dt**(-1)
-    call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,u,v,w)
+    call bounduvw(cbcvel,n,1,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,u,v,w)
     call fillps(n,dli,dzfi,dti,u,v,w,p)
     call updt_rhs_b(['c','c','c'],cbcpre,n,is_bound,rhsbx,rhsby,rhsbz,p)
     call solver(n,ng,arrplan,normfft,lambdaxy,a,b,c,cbcpre,['c','c','c'],p)
-    call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,p)
+    call boundp(cbcpre,n,1,halo,bcpre,nb,is_bound,dl,dzc,p)
     call correc(n,dli,dzci,dt,p,u,v,w)
-    call bounduvw(cbcvel,n,bcvel,nb,is_bound,.true.,dl,dzc,dzf,u,v,w)
+    call bounduvw(cbcvel,n,1,halo,bcvel,nb,is_bound,.true.,dl,dzc,dzf,u,v,w)
     call chkdiv(lo,hi,dli,dzfi,u,v,w,divtot,divmax)
     passed_loc = divmax < small
     if(myid == 0.and.(.not.passed_loc)) &
@@ -298,7 +298,7 @@ module mod_sanity
                     lambdaxy,['f','c','c'],a,b,c,arrplan,normfft,rhsbx,rhsby,rhsbz)
     !$acc update device(lambdaxy,a,b,c,rhsbx,rhsby,rhsbz)
     !@acc call set_cufft_wspace(pack(arrplan,.true.),acc_get_cuda_stream(1))
-    call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,up,vp,wp)
+    call bounduvw(cbcvel,n,1,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,up,vp,wp)
     !$acc kernels default(present)
     up(:,:,:) = up(:,:,:)*alpha
     u( :,:,:) = up(:,:,:)
@@ -307,7 +307,7 @@ module mod_sanity
     call updt_rhs_b(['f','c','c'],cbcvel(:,:,1),n,is_bound,rhsbx,rhsby,rhsbz,up)
     call solver(n,ng,arrplan,normfft,lambdaxy,a,bb,c,cbcvel(:,:,1),['f','c','c'],up)
     call fftend(arrplan)
-    call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,up,vp,wp) ! actually we are only interested in boundary condition in up
+    call bounduvw(cbcvel,n,1,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,up,vp,wp) ! actually we are only interested in boundary condition in up
     call chk_helmholtz(lo,hi,dli,dzci,dzfi,alpha,u,up,cbcvel(:,:,1),is_bound,['f','c','c'],resmax)
     passed_loc = resmax < small
     if(myid == 0.and.(.not.passed_loc)) &
@@ -318,7 +318,7 @@ module mod_sanity
                     lambdaxy,['c','f','c'],a,b,c,arrplan,normfft,rhsbx,rhsby,rhsbz)
     !$acc update device(lambdaxy,a,b,c,rhsbx,rhsby,rhsbz)
     !@acc call set_cufft_wspace(pack(arrplan,.true.),acc_get_cuda_stream(1))
-    call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,up,vp,wp)
+    call bounduvw(cbcvel,n,1,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,up,vp,wp)
     !$acc kernels default(present)
     vp(:,:,:) = vp(:,:,:)*alpha
     v( :,:,:) = vp(:,:,:)
@@ -327,7 +327,7 @@ module mod_sanity
     call updt_rhs_b(['c','f','c'],cbcvel(:,:,2),n,is_bound,rhsbx,rhsby,rhsbz,vp)
     call solver(n,ng,arrplan,normfft,lambdaxy,a,bb,c,cbcvel(:,:,2),['c','f','c'],vp)
     call fftend(arrplan)
-    call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,up,vp,wp) ! actually we are only interested in boundary condition in vp
+    call bounduvw(cbcvel,n,1,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,up,vp,wp) ! actually we are only interested in boundary condition in vp
     call chk_helmholtz(lo,hi,dli,dzci,dzfi,alpha,v,vp,cbcvel(:,:,2),is_bound,['c','f','c'],resmax)
     passed_loc = resmax < small
     if(myid == 0.and.(.not.passed_loc)) &
@@ -338,7 +338,7 @@ module mod_sanity
                     lambdaxy,['c','c','f'],a,b,c,arrplan,normfft,rhsbx,rhsby,rhsbz)
     !$acc update device(lambdaxy,a,b,c,rhsbx,rhsby,rhsbz)
     !@acc call set_cufft_wspace(pack(arrplan,.true.),acc_get_cuda_stream(1))
-    call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,up,vp,wp)
+    call bounduvw(cbcvel,n,1,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,up,vp,wp)
     !$acc kernels default(present)
     wp(:,:,:) = wp(:,:,:)*alpha
     w( :,:,:) = wp(:,:,:)
@@ -347,7 +347,7 @@ module mod_sanity
     call updt_rhs_b(['c','c','f'],cbcvel(:,:,3),n,is_bound,rhsbx,rhsby,rhsbz,wp)
     call solver(n,ng,arrplan,normfft,lambdaxy,a,bb,c,cbcvel(:,:,3),['c','c','f'],wp)
     call fftend(arrplan)
-    call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,up,vp,wp) ! actually we are only interested in boundary condition in wp
+    call bounduvw(cbcvel,n,1,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,up,vp,wp) ! actually we are only interested in boundary condition in wp
     call chk_helmholtz(lo,hi,dli,dzci,dzfi,alpha,w,wp,cbcvel(:,:,3),is_bound,['c','c','f'],resmax)
     passed_loc = resmax < small
     if(myid == 0.and.(.not.passed_loc)) &

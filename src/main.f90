@@ -35,7 +35,7 @@ program cans
   use mod_bound          , only: boundp,bounduvw,updt_rhs_b
   use mod_chkdiv         , only: chkdiv
   use mod_chkdt          , only: chkdt
-  use mod_common_mpi     , only: myid,ierr
+  use mod_common_mpi     , only: myid,halo,halo_s,halo_big,nh_p,nh_v,nh_s,nh_b,ierr
   use mod_correc         , only: correc
   use mod_fft            , only: fftini,fftend
   use mod_fillps         , only: fillps
@@ -113,6 +113,8 @@ program cans
   real(rp), allocatable, dimension(:,:,:) :: u,v,w,p,pp
 #if defined(_HEAT_TRANSFER)
   real(rp), dimension(:,:,:)  , allocatable :: s
+  real(rp), dimension(:,:,:)  , allocatable :: tmp
+  real(rp), dimension(:,:,:)  , allocatable :: al
 #endif
   real(rp), dimension(3) :: tauxo,tauyo,tauzo
   real(rp), dimension(3) :: f
@@ -190,6 +192,14 @@ program cans
   twi = MPI_WTIME()
   savecounter = 0
   !
+  ! halo calculation
+  !
+  nh_p = 1
+  nh_v = 1
+  nh_s = 3
+  nh_b = 6
+  !
+  !
   ! allocate variables
   !
   allocate(u( 0:n(1)+1,0:n(2)+1,0:n(3)+1), &
@@ -198,7 +208,9 @@ program cans
            p( 0:n(1)+1,0:n(2)+1,0:n(3)+1), &
            pp(0:n(1)+1,0:n(2)+1,0:n(3)+1))
 #if defined(_HEAT_TRANSFER)
-  allocate(s( 0:n(1)+1,0:n(2)+1,0:n(3)+1))
+  allocate(s  (-2:n(1)+3,-2:n(2)+3,-2:n(3)+3), &
+           al (0:n(1)+1,0:n(2)+1,0:n(3)+1), &
+           tmp(0:n(1)+1,0:n(2)+1,0:n(3)+1))
 #endif
   allocate(lambdaxyp(n_z(1),n_z(2)))
   allocate(ap(n_z(3)),bp(n_z(3)),cp(n_z(3)))
@@ -245,8 +257,7 @@ program cans
   allocate(psi_u(0:n(1)+1,0:n(2)+1,0:n(3)+1), &
            psi_v(0:n(1)+1,0:n(2)+1,0:n(3)+1), &
            psi_w(0:n(1)+1,0:n(2)+1,0:n(3)+1), &
-           psi(0:n(1)+1,0:n(2)+1,0:n(3)+1), &
-           marker(0:n(1)+1,0:n(2)+1,0:n(3)+1))
+           psi(0:n(1)+1,0:n(2)+1,0:n(3)+1))
 #if defined(_IBM_BC)
   allocate(    psi_u(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
                psi_v(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
@@ -268,7 +279,7 @@ program cans
            nabs_surf(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
               deltan(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
              WP1(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6,1:7), &
-             WP2(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6,1:7)   )
+             WP2(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6,1:7))
 #endif
   if(height_map)then !Read surface height-map and divide it among subdomains
      allocate(surf_z(1:ng(1),1:ng(2)))
@@ -411,12 +422,23 @@ allocate(duconv(n(1),n(2),n(3)), &
     call initflow(inivel,ng,lo,zc/lz,dzc/lz,dzf/lz,visc,u,v,w,p)
 #if defined(_HEAT_TRANSFER)
     call inittmp(itmp,n(1),n(2),n(3),s)
+    !$acc kernels default(present) async(1)
+    al(:,:,:) = alph_f
+    !$acc end kernels
+    !$acc enter data copyin(s,al)
+    call boundp(cbctmp,n,nh_s,halo_s,bctmp,nb,is_bound,dl,dzc,s)
     if(myid == 0) print*, '*** Heat solver enabled ***'
 #endif
     if(myid == 0) print*, '*** Initial condition successfully set ***'
   else
 #if defined(_HEAT_TRANSFER)
-    call load('r',trim(datadir)//'fld.bin',MPI_COMM_WORLD,ng,[1,1,1],lo,hi,time,istep,u,v,w,p,s)
+    tmp(0:n(1)+1,0:n(2)+1,0:n(3)+1) = 0._rp
+    !
+    call load('r',trim(datadir)//'fld.bin',MPI_COMM_WORLD,ng,[1,1,1],lo,hi,time,istep,u,v,w,p,tmp)
+    !
+    s(1:n(1),1:n(2),1:n(3)) = tmp(1:n(1),1:n(2),1:n(3))
+    !
+    deallocate(tmp)
 #else
     call load('r',trim(datadir)//'fld.bin',MPI_COMM_WORLD,ng,[1,1,1],lo,hi,time,istep,u,v,w,p)
 #endif
@@ -427,19 +449,19 @@ allocate(duconv(n(1),n(2),n(3)), &
 !$acc update self(lo,hi,n,zc,zf,dzc,dzf,dzci,dzfi,dl,dli,l)
   if(myid == 0) print*, '*** Initializing IBM ***'
 #if defined(_IBM_BC)
-  call initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,ng,nb,lo,hi,psi_u,psi_v,psi_w,psi,marker, &
+  call initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,nh_b,halo,ng,nb,lo,hi,psi_u,psi_v,psi_w,psi,marker, &
                surf_height, &
                0,zc,zf,zf_g,dzc,dzf,dl,dli, &
                nx_surf,ny_surf,nz_surf,nabs_surf,i_mirror,j_mirror,k_mirror, &
                i_IP1,j_IP1,k_IP1,i_IP2,j_IP2,k_IP2,WP1,WP2,deltan)
 #else
 #if defined(_VOLUME)
-  call initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,ng,nb,lo,hi,psi_u,psi_v,psi_w,psi,marker, &
+  call initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,nh_p,halo,ng,nb,lo,hi,psi_u,psi_v,psi_w,psi,marker, &
                surf_height, &
                0,zc,zf,zf_g,dzc,dzf,dl,dli)
 #endif
 #if defined(_SIMPLE)
-  call initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,ng,nb,lo,hi,psi_u,psi_v,psi_w,psi, &
+  call initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,nh_p,halo,ng,nb,lo,hi,psi_u,psi_v,psi_w,psi, &
                0,zc,zf,zf_g,dzc,dzf,dl,dli)
 #endif
 #endif
@@ -456,7 +478,21 @@ allocate(duconv(n(1),n(2),n(3)), &
 
   !$acc enter data copyin(u,v,w,p) create(pp)
 #if defined(_HEAT_TRANSFER)
-  !$acc enter data copyin(s)
+  !$acc enter data copyin(s,al)
+#endif
+#if defined(_IBM) && defined(_HEAT_TRANSFER)
+  !
+  ! Set thermal diffusivity in fluid and solid regions
+  !
+  !$acc kernels default(present) async(1)
+   do k=1,n(3)
+     do j=1,n(2)
+       do i=1,n(1)
+        if (psi(i,j,k) == 0.) al(i,j,k) = alph_s ! if in solid
+       end do
+     end do
+   end do
+  !$acc end kernels
 #endif
 #if defined(_IBM)
   !
@@ -464,18 +500,18 @@ allocate(duconv(n(1),n(2),n(3)), &
   !
   call force_vel(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fibm)
 #endif
-  call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,u,v,w)
+  call bounduvw(cbcvel,n,nh_v,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,u,v,w)
+  call boundp(cbcpre,n,nh_p,halo,bcpre,nb,is_bound,dl,dzc,p)
 #if defined(_HEAT_TRANSFER)
-  call boundp(cbctmp,n,bctmp,nb,is_bound,dl,dzc,s)
+  call boundp(cbctmp,n,nh_s,halo_s,bctmp,nb,is_bound,dl,dzc,s)
 #endif
-  call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,p)
   !
   ! post-process and write initial condition
   !
   write(fldnum,'(i7.7)') istep
   !$acc update self(u,v,w,p)
 #if defined(_HEAT_TRANSFER)
-  !$acc update self(s)
+  !$acc update self(s,al)
 #endif
   include 'out1d.h90'
   include 'out2d.h90'
@@ -533,7 +569,7 @@ allocate(duconv(n(1),n(2),n(3)), &
       dtrk = sum(rkcoeff(:,irk))*dt
       dtrki = dtrk**(-1)
 #if defined(_HEAT_TRANSFER)
-      call rk_scal(rkcoeff(:,irk),n,dli,dzci,dzfi,alph_f,alph_s,dt,l,u,v,w, &
+      call rk_scal(rkcoeff(:,irk),n,dli,dzci,dzfi,alph_f,alph_s,al,dt,l,u,v,w, &
 #if defined(_IBM)
                    dl,dzc,dzf, &
                    psi, &
@@ -542,6 +578,7 @@ allocate(duconv(n(1),n(2),n(3)), &
 #endif
 #endif
                    s)
+      call boundp(cbctmp,n,nh_s,halo_s,bctmp,nb,is_bound,dl,dzc,s)
 #endif
       call rk(rkcoeff(:,irk),n,dli,l,zc,zf,dzci,dzfi,grid_vol_ratio_c,grid_vol_ratio_f,visc,dt,p, &
               is_bound,is_forced,velf,bforce,tauxo,tauyo,tauzo,u,v,w, &
@@ -671,17 +708,17 @@ allocate(duconv(n(1),n(2),n(3)), &
 #endif
       dpdl(:) = dpdl(:) + f(:)
 #if defined(_HEAT_TRANSFER)
-      call boundp(cbctmp,n,bctmp,nb,is_bound,dl,dzc,s)
+      ! call boundp(cbctmp,n,nh_s,halo_s,bctmp,nb,is_bound,dl,dzc,s)
 #endif
-      call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,u,v,w)
+      call bounduvw(cbcvel,n,nh_v,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,u,v,w)
       call fillps(n,dli,dzfi,dtrki,u,v,w,pp)
       call updt_rhs_b(['c','c','c'],cbcpre,n,is_bound,rhsbp%x,rhsbp%y,rhsbp%z,pp)
       call solver(n,ng,arrplanp,normfftp,lambdaxyp,ap,bp,cp,cbcpre,['c','c','c'],pp)
-      call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,pp)
+      call boundp(cbcpre,n,nh_p,halo,bcpre,nb,is_bound,dl,dzc,pp)
       call correc(n,dli,dzci,dtrk,pp,u,v,w)
-      call bounduvw(cbcvel,n,bcvel,nb,is_bound,.true.,dl,dzc,dzf,u,v,w)
+      call bounduvw(cbcvel,n,nh_v,halo,bcvel,nb,is_bound,.true.,dl,dzc,dzf,u,v,w)
       call updatep(n,dli,dzci,dzfi,alpha,pp,p)
-      call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,p)
+      call boundp(cbcpre,n,nh_p,halo,bcpre,nb,is_bound,dl,dzc,p)
     end do
     dpdl(:) = -dpdl(:)*dti
 #if defined(_IBM)

@@ -350,11 +350,11 @@ module mod_rk
     end do
 #endif
   end subroutine rk
-  subroutine rk_scal(rkpar,n,dli,dzci,dzfi,alph_f,alph_s,dt,l,u,v,w, &
+  subroutine rk_scal(rkpar,n,dli,dzci,dzfi,alph_f,alph_s,al,dt,l,u,v,w, &
 #if defined(_IBM)
                      dl,dzc,dzf, &
                      psi, &
-#if defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
+#if defined(_VOLUME) && defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
                      fibm, &
 #endif
 #endif
@@ -373,14 +373,15 @@ module mod_rk
     real(rp), intent(in   ), dimension(0:) :: dzc,dzf
 #endif
     real(rp), intent(in   ) :: alph_f,alph_s,dt
+    real(rp), intent(in   ), dimension(0:,0:,0:) :: al
     real(rp), intent(in   ), dimension(0:,0:,0:) :: u,v,w
-    real(rp), intent(inout), dimension(0:,0:,0:) :: s
+    real(rp), intent(inout), dimension(-2:,-2:,-2:) :: s
     real(rp), target     , allocatable, dimension(:,:,:), save :: dsdtrk_t, dsdtrko_t
     real(rp), pointer    , contiguous , dimension(:,:,:), save :: dsdtrk, dsdtrko
     real(rp) :: factor1,factor2
 #if defined(_IBM)
     real(rp), intent(in   ), dimension(0:,0:,0:) :: psi
-#if defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
+#if defined(_VOLUME) && defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
     real(rp), intent(out  ), dimension(4) :: fibm
 #endif
 #endif
@@ -394,7 +395,7 @@ module mod_rk
     !
     if(is_first) then ! leverage save attribute to allocate these arrays on the device only once
       is_first = .false.
-      allocate(dsdtrk_t( n(1),n(2),n(3)),dsdtrko_t(n(1),n(2),n(3)))
+      allocate(dsdtrk_t(n(1),n(2),n(3)),dsdtrko_t(n(1),n(2),n(3)))
       !$acc enter data create(dsdtrk_t, dsdtrko_t) async(1)
       !$acc kernels default(present) async(1)
       dsdtrko_t(:,:,:) = 0._rp
@@ -403,7 +404,7 @@ module mod_rk
       dsdtrko => dsdtrko_t
     end if
     !
-    call scal(n(1),n(2),n(3),dli(1),dli(2),dli(3),dzci,dzfi,alph_f,alph_s, &
+    call scal(n(1),n(2),n(3),dli(1),dli(2),dli(3),dzci,dzfi,alph_f,alph_s,al, &
 #if defined(_IBM)
               psi, &
 #endif
@@ -419,7 +420,7 @@ module mod_rk
       end do
     end do
     call swap(dsdtrk,dsdtrko)
-#if defined(_IBM) && defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
+#if defined(_IBM) && defined(_VOLUME) && defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
     !
     ! IBM forcing
     !

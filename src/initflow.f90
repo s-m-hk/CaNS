@@ -208,7 +208,7 @@ module mod_initflow
     !
     character(len=3), intent(in )                                     :: initmp
     integer         , intent(in )                                     :: nx,ny,nz
-    real(rp)        , intent(out), dimension(0:,0:,0:) :: tmp
+    real(rp)        , intent(out), dimension(-2:,-2:,-2:)             :: tmp
     !
     integer :: i,j,k
     !
