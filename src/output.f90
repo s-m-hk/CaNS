@@ -312,7 +312,7 @@ module mod_output
     select case(idir)
     case(3)
       grid_area_ratio = dl(1)*dl(2)/(l(1)*l(2))
-      allocate(um(0:q+1),vm(0:q+1),wm(0:q+1),u2(0:q+1),v2(0:q+1),w2(0:q+1),uw(0:q+1))
+      allocate(um(0:q+1),vm(0:q+1),wm(0:q+1),pm(0:q+1),u2(0:q+1),v2(0:q+1),w2(0:q+1),p2(0:q+1),uw(0:q+1))
       um(:) = 0.
       vm(:) = 0.
       wm(:) = 0.
