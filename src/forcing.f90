@@ -140,11 +140,9 @@ module mod_forcing
     do k=1,nz
       do j=1,ny
         do i=1,nx
-          if ( (zf(k) .ge. 0._rp) .and. (zf(k) .le. zf(nz)) ) then !Forcing is calculated based on flow rate in free-fluid region
           psis = 1.-psi(i,j,k)
           mean_val = mean_val + p(i,j,k)*psis*dx*dy*dz(k)
           mean_psi = mean_psi + psis*dx*dy*dz(k)
-          endif
         enddo
       enddo
     enddo
@@ -161,7 +159,6 @@ module mod_forcing
     do k=1,nz
       do j=1,ny
         do i=1,nx
-          if ( (zf(k) .ge. 0._rp) .and. (zf(k) .le. zf(nz)) ) then !Forcing is applied in free-fluid region
 #if defined(_FORCE_FLUID_ONLY)
           psis = 1.-psi(i,j,k) ! (if bulk velocity forced only inside the fluid)
 #else
@@ -169,7 +166,6 @@ module mod_forcing
 #endif
           p(i,j,k) = p(i,j,k) + (velf-mean_val)*psis
           f = f + (velf-mean_val)*psis*dx*dy*dz(k)
-          endif
         enddo
       enddo
     enddo
