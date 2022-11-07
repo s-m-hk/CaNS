@@ -541,7 +541,9 @@ integer, intent(in):: ii,jj
      if (zzz.lt.z_center) wall_ghost=.true.
 
 end function wall_ghost
+
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 function sphere(xxx,yyy,zzz,ii,jj,dz,lo,hi)
 implicit none
 logical :: sphere,cond1,cond2,cond3,cond4
@@ -564,7 +566,7 @@ integer, intent(in):: ii,jj
      if (cond1.and.cond2.and.cond3.and.cond4) sphere=.true.
 
 end function sphere
-!!
+!
 function sphere_ghost(xxx,yyy,zzz,ii,jj,kk,dz)
 implicit none
 logical :: sphere_ghost,cond1,cond2,cond3,cond4

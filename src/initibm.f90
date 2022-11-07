@@ -13,7 +13,7 @@ public initIBM
 !
 contains
 #if defined(_SIMPLE)
-subroutine initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,ng,nb,lo,hi,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag, &
+subroutine initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,nh,halo,ng,nb,lo,hi,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag, &
                    ldz,zc,zf,zf_g,dzc,dzf,dl,dli)
  implicit none
  character(len=1), intent(in), dimension(0:1,3,3)            :: cbcvel
@@ -21,6 +21,8 @@ subroutine initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,ng,nb,lo,hi,cell_u_tag,c
  character(len=1), intent(in), dimension(0:1,3)              :: cbcpre
  real(rp), intent(in), dimension(0:1,3)                      :: bcpre
  integer , intent(in), dimension(0:1,3  )                    :: nb
+ integer , intent(in)                                        :: nh
+ integer , intent(in), dimension(3)                          :: halo
  logical , intent(in), dimension(0:1,3  )                    :: is_bound
  integer , intent(in), dimension(3)                          :: n,ng,lo,hi
  integer , intent(in )                                       :: ldz
@@ -46,7 +48,7 @@ subroutine initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,ng,nb,lo,hi,cell_u_tag,c
    !
    call IBM_mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,cell_phi_tag)
    !$acc enter data copyin(cell_phi_tag)
-   call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
+   call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
    !
    do k=0,nz
     do j=0,ny
@@ -58,7 +60,7 @@ subroutine initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,ng,nb,lo,hi,cell_u_tag,c
     enddo
    enddo
    !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag)
-   call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
+   call bounduvw(cbcvel,n,nh,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
    !
    dummy_time = 0.; dummy_istep = 0
    !$acc update self(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
@@ -67,8 +69,8 @@ subroutine initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,ng,nb,lo,hi,cell_u_tag,c
    call load('r',trim(datadir)//'IBM.bin',MPI_COMM_WORLD,ng,[1,1,1],lo,hi,dummy_time,dummy_istep,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
    !
    !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
-    call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
-    call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
+    call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
+    call bounduvw(cbcvel,n,nh,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
   if (myid == 0)  print*, '*** Stored IBM data loaded ***'
    !---------------------------------------------------------------------
  endif
@@ -77,7 +79,7 @@ end subroutine initIBM
 #endif
 !
 #if defined(_VOLUME)
-subroutine initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,ng,nb,lo,hi,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag, &
+subroutine initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,nh,halo,ng,nb,lo,hi,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag, &
                    Level_set, &
                    surf_height, &
                    ldz,zc,zf,zf_g,dzc,dzf,dl,dli, &
@@ -89,6 +91,8 @@ subroutine initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,ng,nb,lo,hi,cell_u_tag,c
  character(len=1), intent(in), dimension(0:1,3)            :: cbcpre
  real(rp), intent(in), dimension(0:1,3)                    :: bcpre
  integer , intent(in), dimension(0:1,3  )                  :: nb
+integer , intent(in)                                       :: nh
+integer , intent(in), dimension(3)                         :: halo
  logical , intent(in), dimension(0:1,3  )                  :: is_bound
  integer , intent(in), dimension(3)                        :: n,ng,lo,hi
  integer , intent(in )                                     :: ldz
@@ -148,7 +152,7 @@ if (.not.is_data) then
 
       !$acc enter data copyin(tmp)
        tmp(:,:,:) = real(Level_set(:,:,:),rp)
-       call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,tmp)
+       call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,tmp)
        Level_set(:,:,:) = int(tmp(:,:,:),i8)
       !$acc exit data copyout(tmp) async ! not needed on the device
    if (myid == 0)  print*, '*** Solid marker has been calculated! ***'
@@ -165,7 +169,7 @@ if (.not.is_data) then
          enddo
         enddo
        enddo
-       call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
+       call bounduvw(cbcvel,n,nh,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
    if (myid == 0)  print*, '*** Volume fractions have been calculated! ***'
   !---------------------------------------------------------------------
 
@@ -180,8 +184,8 @@ if (.not.is_data) then
 
   call normal_vectors(n,lo,hi,Level_set,cell_phi_tag,nx_surf,ny_surf,nz_surf,nabs_surf,zc,zf,dzc,dzf,dl,dli,n,surf_height)
      !$acc enter data copyin(nx_surf,ny_surf,nz_surf,nabs_surf)
-     call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,nx_surf,ny_surf,nz_surf)
-     call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,nabs_surf)
+     call bounduvw(cbcvel,n,nh,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,nx_surf,ny_surf,nz_surf)
+     call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,nabs_surf)
   if (myid.eq.0)  print*, '*** Normal vectors have been calculated! ***'
   !*********************************************************************
   x_intersect(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) = 0.
@@ -190,9 +194,9 @@ if (.not.is_data) then
 
   call intersect(n,lo,hi,nx_surf,ny_surf,nz_surf,nabs_surf,x_intersect,y_intersect,z_intersect,zc,dzc,surf_height)
       !$acc enter data copyin(x_intersect,y_intersect,z_intersect)
-      call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,x_intersect)
-      call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,y_intersect)
-      call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,z_intersect)
+      call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,x_intersect)
+      call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,y_intersect)
+      call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,z_intersect)
   if (myid.eq.0)  print*, '*** Intersect points have  been calculated! ***'
   !*********************************************************************
 
@@ -216,16 +220,16 @@ if (.not.is_data) then
                     zc,dzc)
 
       !$acc enter data copyin(deltan,x_mirror,y_mirror,z_mirror,x_IP1,x_IP2,y_IP1,y_IP2,z_IP1,z_IP2)
-      call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,deltan)
-      call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,x_mirror)
-      call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,y_mirror)
-      call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,z_mirror)
-      call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,x_IP1)
-      call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,x_IP2)
-      call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,y_IP1)
-      call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,y_IP2)
-      call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,z_IP1)
-      call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,z_IP2)
+      call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,deltan)
+      call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,x_mirror)
+      call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,y_mirror)
+      call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,z_mirror)
+      call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,x_IP1)
+      call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,x_IP2)
+      call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,y_IP1)
+      call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,y_IP2)
+      call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,z_IP1)
+      call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,z_IP2)
   !*********************************************************************
       i_mirror(-5:i1+5,-5:j1+5,-5:k1+5)    =   -1000
       j_mirror(-5:i1+5,-5:j1+5,-5:k1+5)    =   -1000
@@ -314,14 +318,14 @@ else
   ! allocate(tmp(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6))
   !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
   ! tmp(:,:,:) = real(Level_set(:,:,:),rp)
-  call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
-  call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
+  call bounduvw(cbcvel,n,nh,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
+  call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
   ! call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,tmp)
   ! Level_set(:,:,:) = int(tmp(:,:,:),i8)
   !$acc enter data copyin(nx_surf,ny_surf,nz_surf,nabs_surf,deltan)
-  call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,nx_surf,ny_surf,nz_surf)
-  call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,nabs_surf)
-  call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,deltan)
+  call bounduvw(cbcvel,n,nh,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,nx_surf,ny_surf,nz_surf)
+  call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,nabs_surf)
+  call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,deltan)
 
    do h = 1,nh
       i_mirror(:,:,lo(3)-h)    = i_mirror(:,:,lo(3))
@@ -350,8 +354,8 @@ else
    ! allocate(tmp(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6))
    !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
    ! tmp(:,:,:) = real(Level_set(:,:,:),rp)
-   call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
-   call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
+   call bounduvw(cbcvel,n,nh,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
+   call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
    ! call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,tmp)
    ! Level_set(:,:,:) = int(tmp(:,:,:),i8)
 #endif

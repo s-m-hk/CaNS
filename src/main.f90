@@ -449,7 +449,7 @@ allocate(duconv(n(1),n(2),n(3)), &
 !$acc update self(lo,hi,n,zc,zf,dzc,dzf,dzci,dzfi,dl,dli,l)
   if(myid == 0) print*, '*** Initializing IBM ***'
 #if defined(_IBM_BC)
-  call initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,nh_b,halo,ng,nb,lo,hi,psi_u,psi_v,psi_w,psi,marker, &
+  call initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,nh_b,halo_big,ng,nb,lo,hi,psi_u,psi_v,psi_w,psi,marker, &
                surf_height, &
                0,zc,zf,zf_g,dzc,dzf,dl,dli, &
                nx_surf,ny_surf,nz_surf,nabs_surf,i_mirror,j_mirror,k_mirror, &
