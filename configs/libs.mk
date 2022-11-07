@@ -17,7 +17,7 @@ ifeq ($(strip $(FCOMP)),INTEL)
 override LIBS += -L/scratch/smhk2/Software/fftw-intel/lib
 endif
 ifeq ($(strip $(FCOMP)),NVIDIA)
-override LIBS += -L/lscratch/smhk2/Software/AMD/amd-fftw/lib
+override LIBS += -L$(NVHPC_ROOT)/math_libs/lib64
 endif
 
 ifneq ($(strip $(GPU)),1)
