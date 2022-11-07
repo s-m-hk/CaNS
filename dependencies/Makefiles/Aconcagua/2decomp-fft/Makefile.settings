@@ -1,0 +1,8 @@
+FC = mpifort
+FFLAGS =  -cpp -D_GPU -Mfree -Kieee -Minfo=accel,stdpar -stdpar=gpu -gpu=cc86,managed,lineinfo -acc -target=gpu -traceback -O3 -DUSE_CUDA -cuda  -cudalib=cufft -module mod -Imod
+OPT = 
+DEFS = -DVERSION=""
+INC = -I/lscratch/smhk2/Software/Nvidia/HPC_SDK/Linux_x86_64/21.9/compilers/include 
+LIBOPT = rcs
+LIBFFT = -L/lscratch/smhk2/Software/Nvidia/HPC_SDK/Linux_x86_64/21.9/math_libs                                /lib64 -Mcudalib=cufft
+LFLAGS =  -acc -lnvhpcwrapnvtx
