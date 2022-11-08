@@ -3,7 +3,8 @@ uni                        ! itmp (init. cond., uni. temp.)
 0.71                       ! Pr
 4.4                        ! dr
 P P  P P  D D              ! cbctmp(0:1,1:3) [T BC type]
-0. 0. 0. 0. 1. 0.          ! bctmp(0:1,1:3)  [T BC value]
+0. 0. 0. 0. 0. 0.          ! bctmp(0:1,1:3)  [T BC value]
 323. 0.1                   ! tmp0, beta0 (ref. temp., heat expan. coeff.)
 0.                         ! solidtemp (for IBM)
-F                          ! is_forced(4) (source term)
+F                          ! is_forced(4) (enable source term)
+1.                         ! velf(4) (source term)

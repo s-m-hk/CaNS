@@ -114,7 +114,9 @@ program cans
 #if defined(_HEAT_TRANSFER)
   real(rp), dimension(:,:,:)  , allocatable :: s
   real(rp), dimension(:,:,:)  , allocatable :: tmp
+#if defined(_IBM)
   real(rp), dimension(:,:,:)  , allocatable :: al
+#endif
 #endif
   real(rp), dimension(3) :: tauxo,tauyo,tauzo
   real(rp), dimension(3) :: f
@@ -196,7 +198,11 @@ program cans
   !
   nh_p = 1
   nh_v = 1
+#if defined (_WENO)
   nh_s = 3
+#else
+  nh_s = 1
+#endif
   nh_b = 6
   !
   !
@@ -208,8 +214,10 @@ program cans
            p( 0:n(1)+1,0:n(2)+1,0:n(3)+1), &
            pp(0:n(1)+1,0:n(2)+1,0:n(3)+1))
 #if defined(_HEAT_TRANSFER)
-  allocate(s  (-2:n(1)+3,-2:n(2)+3,-2:n(3)+3), &
-           al (0:n(1)+1,0:n(2)+1,0:n(3)+1), &
+  allocate(s (1-nh_s:n(1)+nh_s,1-nh_s:n(2)+nh_s,1-nh_s:n(3)+nh_s), &
+#if defined(_IBM)
+           al(0:n(1)+1,0:n(2)+1,0:n(3)+1), &
+#endif
            tmp(0:n(1)+1,0:n(2)+1,0:n(3)+1))
 #endif
   allocate(lambdaxyp(n_z(1),n_z(2)))
@@ -422,11 +430,12 @@ allocate(duconv(n(1),n(2),n(3)), &
     call initflow(inivel,ng,lo,zc/lz,dzc/lz,dzf/lz,visc,u,v,w,p)
 #if defined(_HEAT_TRANSFER)
     call inittmp(itmp,n(1),n(2),n(3),s)
+#if defined(_IBM)
+    !$acc enter data copyin(al)
     !$acc kernels default(present) async(1)
     al(:,:,:) = alph_f
     !$acc end kernels
-    !$acc enter data copyin(s,al)
-    call boundp(cbctmp,n,nh_s,halo_s,bctmp,nb,is_bound,dl,dzc,s)
+#endif
     if(myid == 0) print*, '*** Heat solver enabled ***'
 #endif
     if(myid == 0) print*, '*** Initial condition successfully set ***'
@@ -454,16 +463,13 @@ allocate(duconv(n(1),n(2),n(3)), &
                0,zc,zf,zf_g,dzc,dzf,dl,dli, &
                nx_surf,ny_surf,nz_surf,nabs_surf,i_mirror,j_mirror,k_mirror, &
                i_IP1,j_IP1,k_IP1,i_IP2,j_IP2,k_IP2,WP1,WP2,deltan)
-#else
-#if defined(_VOLUME)
+#elif defined(_VOLUME)
   call initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,nh_p,halo,ng,nb,lo,hi,psi_u,psi_v,psi_w,psi,marker, &
                surf_height, &
                0,zc,zf,zf_g,dzc,dzf,dl,dli)
-#endif
-#if defined(_SIMPLE)
+#elif defined(_SIMPLE)
   call initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,nh_p,halo,ng,nb,lo,hi,psi_u,psi_v,psi_w,psi, &
                0,zc,zf,zf_g,dzc,dzf,dl,dli)
-#endif
 #endif
   !
   ! output solid volume fractions
@@ -478,7 +484,7 @@ allocate(duconv(n(1),n(2),n(3)), &
 
   !$acc enter data copyin(u,v,w,p) create(pp)
 #if defined(_HEAT_TRANSFER)
-  !$acc enter data copyin(s,al)
+  !$acc enter data copyin(s)
 #endif
 #if defined(_IBM) && defined(_HEAT_TRANSFER)
   !
@@ -511,7 +517,7 @@ allocate(duconv(n(1),n(2),n(3)), &
   write(fldnum,'(i7.7)') istep
   !$acc update self(u,v,w,p)
 #if defined(_HEAT_TRANSFER)
-  !$acc update self(s,al)
+  !$acc update self(s)
 #endif
   include 'out1d.h90'
   include 'out2d.h90'
@@ -569,22 +575,34 @@ allocate(duconv(n(1),n(2),n(3)), &
       dtrk = sum(rkcoeff(:,irk))*dt
       dtrki = dtrk**(-1)
 #if defined(_HEAT_TRANSFER)
-      call rk_scal(rkcoeff(:,irk),n,dli,dzci,dzfi,alph_f,alph_s,al,dt,l,u,v,w, &
+      call rk_scal(rkcoeff(:,irk),n,nh_s,dli,dzci,dzfi,grid_vol_ratio_f,dt,l,u,v,w,alph_f,is_forced,velf, &
 #if defined(_IBM)
+                   alph_s,al, &
                    dl,dzc,dzf, &
                    psi, &
-#if defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
+#if defined(_VOLUME) && defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
                    fibm, &
 #endif
 #endif
-                   s)
+                   s,f)
+#if !defined(_IBM)
+      block
+        real(rp) :: ff
+        if(is_forced(4)) then
+           ff = f(4)
+          !$acc kernels default(present) async(1)
+          s(1:n(1),1:n(2),1:n(3)) = s(1:n(1),1:n(2),1:n(3)) + ff
+          !$acc end kernels
+        endif
+      end block
+#endif
       call boundp(cbctmp,n,nh_s,halo_s,bctmp,nb,is_bound,dl,dzc,s)
 #endif
-      call rk(rkcoeff(:,irk),n,dli,l,zc,zf,dzci,dzfi,grid_vol_ratio_c,grid_vol_ratio_f,visc,dt,p, &
+      call rk(rkcoeff(:,irk),n,nh_s,dli,l,zc,zf,dzci,dzfi,grid_vol_ratio_c,grid_vol_ratio_f,visc,dt,p, &
               is_bound,is_forced,velf,bforce,tauxo,tauyo,tauzo,u,v,w, &
 #if defined(_IBM)
               dl,dzc,dzf, &
-              psi_u,psi_v,psi_w, &
+              psi,psi_u,psi_v,psi_w, &
               fibm, &
 #endif
 #if defined(_HEAT_TRANSFER)
@@ -594,6 +612,7 @@ allocate(duconv(n(1),n(2),n(3)), &
               duconv,dvconv,dwconv, &
 #endif
               f)
+#if !defined(_IBM)
       block
         real(rp) :: ff
         if(is_forced(1)) then
@@ -614,20 +633,8 @@ allocate(duconv(n(1),n(2),n(3)), &
           w(1:n(1),1:n(2),1:n(3)) = w(1:n(1),1:n(2),1:n(3)) + ff
           !$acc end kernels
         end if
-#if defined(_HEAT_TRANSFER)
-        if(is_forced(4)) then
-          if (velf(1).ne.0.) then
-           ff = velf(1)
-          else
-           call bulk_mean(n,grid_vol_ratio_f,u,meanvelu)
-           ff = meanvelu
-          endif
-          !$acc kernels default(present) async(1)
-          s(1:n(1),1:n(2),1:n(3)) = s(1:n(1),1:n(2),1:n(3)) + u(1:n(1),1:n(2),1:n(3))/ff
-          !$acc end kernels
-        endif
-#endif
       end block
+#endif
 #if defined(_IMPDIFF)
       alpha = -.5*visc*dtrk
       !$OMP PARALLEL WORKSHARE

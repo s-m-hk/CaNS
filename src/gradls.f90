@@ -13,7 +13,7 @@ module mod_gradls
   contains
   !
 #if defined(_HEAT_TRANSFER)
-  subroutine weno5(nx,ny,nz,dxi,dyi,dzi,tmp,ux,uy,uz,dphidt)
+  subroutine weno5(nx,ny,nz,nh_s,dxi,dyi,dzi,tmp,ux,uy,uz,dphidt)
     !
     implicit none
     !
@@ -31,9 +31,9 @@ module mod_gradls
                            sigma3 = 0.3_rp 
     real(rp), parameter :: eps    = 10._rp**(-6)
     !
-    integer , intent(in )                      :: nx,ny,nz
+    integer , intent(in )                      :: nx,ny,nz,nh_s
     real(rp), intent(in )                      :: dxi,dyi,dzi
-    real(rp), intent(in ), dimension(-2:,-2:,-2:) :: tmp
+    real(rp), intent(in ), dimension(1-nh_s:,1-nh_s:,1-nh_s:) :: tmp
     real(rp), intent(in ), dimension(0:,0:,0:) :: ux,uy,uz
     real(rp), intent(out), dimension(1:,1:,1:) :: dphidt
     !

@@ -16,13 +16,14 @@ module mod_source
   contains
   subroutine grav_src(nx,ny,nz, &
 #if defined(_HEAT_TRANSFER)
-                      tmp, &
+                      nh_s,tmp, &
 #endif
                       dudt,dvdt,dwdt)
     implicit none
     integer , intent(in   )                      :: nx,ny,nz
 #if defined(_HEAT_TRANSFER)
-    real(rp), intent(in   ), dimension(0:,0:,0:) :: tmp
+    integer , intent(in   )                      :: nh_s
+    real(rp), intent(in   ), dimension(1-nh_s:,1-nh_s:,1-nh_s:) :: tmp
 #endif
     real(rp), intent(inout), dimension(:,:,:) :: dudt,dvdt,dwdt
     !

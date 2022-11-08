@@ -164,6 +164,7 @@ contains
       read(iunit,*,iostat=ierr) tmp0,beta_th
       read(iunit,*,iostat=ierr) solidtemp
       read(iunit,*,iostat=ierr) is_forced(4)
+      read(iunit,*,iostat=ierr) velf(4)
     else
       if(myid == 0) print*, 'Error reading heat input file' 
       if(myid == 0) print*, 'Aborting...'

@@ -13,7 +13,7 @@ module mod_initmpi
   !@acc use cudecomp
 #if defined(_OPENACC)
   use mod_common_cudecomp, only: cudecomp_real_rp,cudecomp_real_gp, &
-                                 ch => handle,gd => gd_halo,gd_poi, &
+                                 ch => handle,gd => gd_halo,gd_halo_scal,gd_poi, &
                                  ap_x,ap_y,ap_z,ap_x_poi,ap_y_poi,ap_z_poi
   use mod_param, only: cudecomp_t_comm_backend     ,cudecomp_h_comm_backend    , &
                        cudecomp_is_t_comm_autotune ,cudecomp_is_h_comm_autotune, &
@@ -89,7 +89,7 @@ module mod_initmpi
     conf_poi = conf
     dims(:) = conf%pdims
     !
-    ! setup descriptor for halo exchanges
+    ! setup descriptor for halo exchanges (1-layer)
     !
     istat = cudecompGridDescConfigSetDefaults(conf)
     conf%gdims(:)      = ng(:)
@@ -115,6 +115,33 @@ module mod_initmpi
       atune_conf%disable_nvshmem_backends = .true.
     end if
     istat = cudecompGridDescCreate(ch,gd,conf,atune_conf)
+    !
+    ! setup descriptor for halo exchanges (3-layer)
+    !
+    istat = cudecompGridDescConfigSetDefaults(conf)
+    conf%gdims(:)      = ng(:)
+    conf%pdims(:)      = dims(1:2)
+    conf%halo_comm_backend = cudecomp_h_comm_backend
+    conf%transpose_axis_contiguous(:) = .false.
+    if(rp == dp) then
+      cudecomp_real_rp = CUDECOMP_DOUBLE
+    else
+      cudecomp_real_rp = CUDECOMP_FLOAT
+    end if
+    istat = cudecompGridDescAutotuneOptionsSetDefaults(atune_conf)
+    atune_conf%halo_extents(:) = 3
+    atune_conf%halo_periods(:) = periods(:)
+    atune_conf%dtype = cudecomp_real_rp
+    atune_conf%autotune_halo_backend = cudecomp_is_h_comm_autotune
+    atune_conf%disable_nccl_backends    = .not.cudecomp_is_t_enable_nccl
+    atune_conf%disable_nvshmem_backends = .not.cudecomp_is_t_enable_nvshmem
+    if(all(conf_poi%transpose_comm_backend /= [CUDECOMP_TRANSPOSE_COMM_NVSHMEM,CUDECOMP_TRANSPOSE_COMM_NVSHMEM_PL])) then
+      !
+      ! disable NVSHMEM halo backend autotuning when NVSHMEM is NOT used for transposes
+      !
+      atune_conf%disable_nvshmem_backends = .true.
+    end if
+    istat = cudecompGridDescCreate(ch,gd_halo_scal,conf,atune_conf)
 #endif
     call decomp_2d_init(ng(1),ng(2),ng(3),dims(1),dims(2),periods)
     if(any(dims(:) == 0)) dims(:) = dims_auto(:)

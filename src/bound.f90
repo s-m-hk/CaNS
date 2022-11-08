@@ -104,7 +104,13 @@ module mod_bound
       call updthalo(nh,halo(idir),nb(:,idir),idir,p)
     end do
 #else
-    call updthalo_gpu(nh,cbc(0,:)//cbc(1,:)==['PP','PP','PP'],p)
+    if (nh == 1) then 
+     call updthalo_gpu(nh,cbc(0,:)//cbc(1,:)==['PP','PP','PP'],p)
+    elseif (nh == 3) then
+     call updthalo_gpu_scal(nh,cbc(0,:)//cbc(1,:)==['PP','PP','PP'],p)
+    elseif (nh == 6) then
+     ! call updthalo_gpu_ibm(nh,cbc(0,:)//cbc(1,:)==['PP','PP','PP'],p)
+    endif
 #endif
     !
     if(is_bound(0,1)) then
@@ -550,6 +556,33 @@ module mod_bound
     end select
     !$acc end host_data
   end subroutine updthalo_gpu
+  !
+  subroutine updthalo_gpu_scal(nh,periods,p)
+    use mod_types
+    use cudecomp
+    use mod_common_cudecomp, only: work => work_halo, &
+                                   ch => handle,gd => gd_halo_scal, &
+                                   dtype => cudecomp_real_rp, &
+                                   istream => istream_acc_queue_1
+    implicit none
+    integer , intent(in) :: nh
+    logical , intent(in) :: periods(3)
+    real(rp), intent(inout), dimension(1-nh:,1-nh:,1-nh:) :: p
+    integer :: istat
+    !$acc host_data use_device(p,work)
+    select case(ipencil_axis)
+    case(1)
+      istat = cudecompUpdateHalosX(ch,gd,p,work,dtype,[nh,nh,nh],periods,2,stream=istream)
+      istat = cudecompUpdateHalosX(ch,gd,p,work,dtype,[nh,nh,nh],periods,3,stream=istream)
+    case(2)
+      istat = cudecompUpdateHalosY(ch,gd,p,work,dtype,[nh,nh,nh],periods,1,stream=istream)
+      istat = cudecompUpdateHalosY(ch,gd,p,work,dtype,[nh,nh,nh],periods,3,stream=istream)
+    case(3)
+      istat = cudecompUpdateHalosZ(ch,gd,p,work,dtype,[nh,nh,nh],periods,1,stream=istream)
+      istat = cudecompUpdateHalosZ(ch,gd,p,work,dtype,[nh,nh,nh],periods,2,stream=istream)
+    end select
+    !$acc end host_data
+  end subroutine updthalo_gpu_scal
 #endif
   
 end module mod_bound
