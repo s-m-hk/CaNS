@@ -119,7 +119,7 @@ program cans
 #endif
 #endif
   real(rp), dimension(3) :: tauxo,tauyo,tauzo
-  real(rp), dimension(3) :: f
+  real(rp), dimension(4) :: f
 #if !defined(_OPENACC)
   type(C_PTR), dimension(2,2) :: arrplanp
 #else
@@ -713,7 +713,7 @@ allocate(duconv(n(1),n(2),n(3)), &
       call solver_gaussel_z(n                    ,aa,bb,cc,cbcvel(:,3,3),['c','c','f'],w)
 #endif
 #endif
-      dpdl(:) = dpdl(:) + f(:)
+      dpdl(:) = dpdl(:) + f(1:3)
 #if defined(_HEAT_TRANSFER)
       ! call boundp(cbctmp,n,nh_s,halo_s,bctmp,nb,is_bound,dl,dzc,s)
 #endif
