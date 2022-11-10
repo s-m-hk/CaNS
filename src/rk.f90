@@ -54,9 +54,7 @@ module mod_rk
     logical , parameter :: is_cmpt_wallshear = .false.
     real(rp), intent(in   ), dimension(2) :: rkpar
     integer , intent(in   ), dimension(3) :: n
-#if defined(_HEAT_TRANSFER)
     integer , intent(in   )               :: nh_s
-#endif
     real(rp), intent(in   )               :: visc,dt
     real(rp), intent(in   ), dimension(3) :: dli,l
 #if defined(_IBM)

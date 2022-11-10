@@ -12,7 +12,6 @@ module mod_gradls
   !
   contains
   !
-#if defined(_HEAT_TRANSFER)
   subroutine weno5(nx,ny,nz,nh_s,dxi,dyi,dzi,tmp,ux,uy,uz,dphidt)
     !
     implicit none
@@ -145,6 +144,5 @@ module mod_gradls
     !
     return
   end subroutine weno5
-#endif
 end module mod_gradls
 
