@@ -10,7 +10,7 @@ module mod_utils
   public bulk_mean,f_sizeof,swap
   !@acc public device_memory_footprint
 contains
-  subroutine bulk_mean(n,grid_vol_ratio,p,mean)
+  subroutine bulk_mean(n,nh,grid_vol_ratio,p,mean)
     !
     ! compute the mean value of an observable over the entire domain
     !
@@ -18,8 +18,9 @@ contains
     use mod_types
     implicit none
     integer , intent(in), dimension(3) :: n
+    integer , intent(in)               :: nh
     real(rp), intent(in), dimension(0:) :: grid_vol_ratio
-    real(rp), intent(in), dimension(0:,0:,0:) :: p
+    real(rp), intent(in), dimension(1-nh:,1-nh:,1-nh:) :: p
     real(rp), intent(out) :: mean
     integer :: i,j,k
     integer :: ierr

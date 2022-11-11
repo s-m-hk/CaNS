@@ -129,7 +129,11 @@ module mod_initmpi
       cudecomp_real_rp = CUDECOMP_FLOAT
     end if
     istat = cudecompGridDescAutotuneOptionsSetDefaults(atune_conf)
+#if defined(_WENO)
     atune_conf%halo_extents(:) = 3
+#else
+    atune_conf%halo_extents(:) = 1
+#endif
     atune_conf%halo_periods(:) = periods(:)
     atune_conf%dtype = cudecomp_real_rp
     atune_conf%autotune_halo_backend = cudecomp_is_h_comm_autotune
@@ -212,8 +216,10 @@ module mod_initmpi
     n_z(:)     = zsize(:)
     do l=1,3
       call makehalo(l,1,n(:),halo(l))
-#if defined(_HEAT_TRANSFER)
+#if defined(_HEAT_TRANSFER) && defined(_WENO)
       call makehalo(l,3,n(:),halo_s(l))
+#elif defined(_HEAT_TRANSFER) && !defined(_WENO)
+      call makehalo(l,1,n(:),halo_s(l))
 #endif
 #if defined(_IBM_BC)
       call makehalo(l,6,n(:),halo_big(l))

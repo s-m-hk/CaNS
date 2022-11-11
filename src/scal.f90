@@ -5,7 +5,7 @@
 !
 ! -
 module mod_scal
-  use mod_gradls ,only: weno5
+  use mod_weno , only: weno5
   use mod_types, only: rp
   implicit none
   private

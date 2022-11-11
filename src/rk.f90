@@ -26,7 +26,7 @@ module mod_rk
                           force_bulk_vel
 #endif
   use mod_common_mpi, only: myid
-  use mod_utils,    only: bulk_mean,swap
+  use mod_utils,      only: bulk_mean,swap
   use mod_types
   implicit none
   private
@@ -302,40 +302,29 @@ module mod_rk
     !
     ! bulk velocity forcing
     !
-    f(:) = 0._rp
+    f(1:3) = 0._rp
 #if !defined(_IBM)
     if(is_forced(1)) then
-      call bulk_mean(n,grid_vol_ratio_c,u,mean)
+      call bulk_mean(n,1,grid_vol_ratio_c,u,mean)
       f(1) = velf(1) - mean
     end if
     if(is_forced(2)) then
-      call bulk_mean(n,grid_vol_ratio_c,v,mean)
+      call bulk_mean(n,1,grid_vol_ratio_c,v,mean)
       f(2) = velf(2) - mean
     end if
     if(is_forced(3)) then
-      call bulk_mean(n,grid_vol_ratio_c,w,mean)
+      call bulk_mean(n,1,grid_vol_ratio_c,w,mean)
       f(3) = velf(3) - mean
     end if
-#if defined(_HEAT_TRANSFER)
-    if(is_forced(4)) then
-      call bulk_mean(n,grid_vol_ratio_f,s,mean)
-      f(4) = velf(4) - mean
-    end if
-#endif
 #else
-#if defined(_HEAT_TRANSFER)
-    if(is_forced(4)) then
-      call force_scal(n,dl,dzf,l,psi_s,s,velf(4),f(4))
-    endif
-#endif
     if(is_forced(1)) then
       call force_bulk_vel(n,1,zc,zf,dl,dzc,l,psi_u,u,velf(1),f(1))
     endif
     if(is_forced(2)) then
-      call force_bulk_vel(n,2,zc,zf,dl,dzc,l,psi_v,v,velf(2),f(2))
+      call force_bulk_vel(n,1,zc,zf,dl,dzc,l,psi_v,v,velf(2),f(2))
     endif
     if(is_forced(3)) then
-      call force_bulk_vel(n,3,zc,zf,dl,dzc,l,psi_w,w,velf(3),f(3))
+      call force_bulk_vel(n,1,zc,zf,dl,dzc,l,psi_w,w,velf(3),f(3))
     endif
 #endif
 #if defined(_IBM)
@@ -362,7 +351,7 @@ module mod_rk
     end do
 #endif
   end subroutine rk
-  subroutine rk_scal(rkpar,n,nh_s,dli,dzci,dzfi,grid_vol_ratio_f,dt,l,u,v,w,alph_f,is_forced,velf, &
+  subroutine rk_scal(rkpar,n,nh_s,dli,zc,zf,dzci,dzfi,grid_vol_ratio_f,dt,l,u,v,w,alph_f,is_forced,velf, &
 #if defined(_IBM)
                      alph_s,al, &
                      dl,dzc,dzf, &
@@ -381,7 +370,7 @@ module mod_rk
     integer , intent(in   ), dimension(3)  :: n
     integer , intent(in   )                :: nh_s
     real(rp), intent(in   ), dimension(3)  :: dli,l
-    real(rp), intent(in   ), dimension(0:) :: dzci,dzfi
+    real(rp), intent(in   ), dimension(0:) :: zc,zf,dzci,dzfi
     real(rp), intent(in   ), dimension(0:) :: grid_vol_ratio_f
     real(rp), intent(out  ), dimension(4)  :: f
     logical , intent(in   ), dimension(3)  :: is_forced
@@ -443,22 +432,22 @@ module mod_rk
     !
     ! source term
     !
-    f(:) = 0._rp
+    f(4) = 0._rp
 #if !defined(_IBM)
     if(is_forced(4)) then
-      call bulk_mean(n,grid_vol_ratio_f,s,mean)
+      call bulk_mean(n,nh_s,grid_vol_ratio_f,s,mean)
       f(4) = velf(4) - mean
     end if
 #else
     if(is_forced(4)) then
-      call force_bulk_vel(n,0,zc,zf,dl,dzc,l,psi_s,s,velf(4),f(4))
+      call force_bulk_vel(n,nh_s,zc,zf,dl,dzc,l,psi_s,s,velf(4),f(4))
     endif
 #endif
 #if defined(_IBM) && defined(_VOLUME) && defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
     !
     ! IBM forcing
     !
-    call force_scal(n,dl,dzc,l,psi_s,s,fibm)
+    call force_scal(n,nh_s,dl,dzf,l,psi_s,s,fibm)
 #endif
   end subroutine rk_scal
 end module mod_rk

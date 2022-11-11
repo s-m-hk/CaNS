@@ -40,12 +40,12 @@ program cans
   use mod_fft            , only: fftini,fftend
   use mod_fillps         , only: fillps
 #if defined(_IBM)
-  use mod_forcing    , only: bulk_mean_ibm, force_vel
+  use mod_forcing        , only: bulk_mean_ibm, force_vel
 #endif
 #if defined(_HEAT_TRANSFER)
-  use mod_initflow   , only: initflow, inittmp
+  use mod_initflow       , only: initflow, inittmp
 #else
-  use mod_initflow   , only: initflow
+  use mod_initflow       , only: initflow
 #endif
   use mod_initgrid       , only: initgrid
   use mod_initmpi        , only: initmpi
@@ -441,13 +441,13 @@ allocate(duconv(n(1),n(2),n(3)), &
     if(myid == 0) print*, '*** Initial condition successfully set ***'
   else
 #if defined(_HEAT_TRANSFER)
-    tmp(0:n(1)+1,0:n(2)+1,0:n(3)+1) = 0._rp
+    ! tmp(0:n(1)+1,0:n(2)+1,0:n(3)+1) = 0._rp
     !
-    call load('r',trim(datadir)//'fld.bin',MPI_COMM_WORLD,ng,[1,1,1],lo,hi,time,istep,u,v,w,p,tmp)
+    call load('r',trim(datadir)//'fld.bin',MPI_COMM_WORLD,ng,nh_s,lo,hi,time,istep,u,v,w,p,s)
     !
-    s(1:n(1),1:n(2),1:n(3)) = tmp(1:n(1),1:n(2),1:n(3))
+    ! s(1:n(1),1:n(2),1:n(3)) = tmp(1:n(1),1:n(2),1:n(3))
     !
-    deallocate(tmp)
+    ! deallocate(tmp)
 #else
     call load('r',trim(datadir)//'fld.bin',MPI_COMM_WORLD,ng,[1,1,1],lo,hi,time,istep,u,v,w,p)
 #endif
@@ -490,6 +490,7 @@ allocate(duconv(n(1),n(2),n(3)), &
   !
   ! Set thermal diffusivity in fluid and solid regions
   !
+  !$acc enter data copyin(al)
   !$acc kernels default(present) async(1)
    do k=1,n(3)
      do j=1,n(2)
@@ -575,7 +576,7 @@ allocate(duconv(n(1),n(2),n(3)), &
       dtrk = sum(rkcoeff(:,irk))*dt
       dtrki = dtrk**(-1)
 #if defined(_HEAT_TRANSFER)
-      call rk_scal(rkcoeff(:,irk),n,nh_s,dli,dzci,dzfi,grid_vol_ratio_f,dt,l,u,v,w,alph_f,is_forced,velf, &
+      call rk_scal(rkcoeff(:,irk),n,nh_s,dli,zc,zf,dzci,dzfi,grid_vol_ratio_f,dt,l,u,v,w,alph_f,is_forced,velf, &
 #if defined(_IBM)
                    alph_s,al, &
                    dl,dzc,dzf, &

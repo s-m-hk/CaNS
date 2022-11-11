@@ -26,7 +26,7 @@ module mod_forcing
     real(rp), intent(in   ) , dimension(0:) :: dzc,dzf
     real(rp), intent(in   ) , dimension(0:,0:,0:) :: psi_u,psi_v,psi_w
     real(rp), intent(inout) , dimension(0:,0:,0:) :: u,v,w
-    real(rp), intent(out  ), dimension(4) :: f
+    real(rp), intent(inout  ), dimension(4) :: f
     real(rp) :: psix,psiy,psiz,fx,fy,fz,fxtot,fytot,fztot,dx,dy
     integer :: i,j,k,nx,ny,nz
     !
@@ -69,15 +69,16 @@ module mod_forcing
     call mpi_allreduce(MPI_IN_PLACE,f(1),3,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
   end subroutine force_vel
   !
-  subroutine force_scal(n,dl,dz,l,psi,s,f)
+  subroutine force_scal(n,nh_s,dl,dz,l,psi,s,f)
     !
     implicit none
     integer , intent(in), dimension(3) :: n
+    integer , intent(in)               :: nh_s
     real(rp), intent(in   ) , dimension(3) :: dl,l
     real(rp), intent(in   ) , dimension(0:) :: dz
     real(rp), intent(in   ) , dimension(0:,0:,0:) :: psi
-    real(rp), intent(inout) , dimension(0:,0:,0:) :: s
-    real(rp), intent(out  ), dimension(4) :: f
+    real(rp), intent(inout) , dimension(1-nh_s:,1-nh_s:,1-nh_s:) :: s
+    real(rp), intent(inout  ), dimension(4) :: f
     real(rp) :: psis,fs,fstot,dx,dy
     integer :: i,j,k,nx,ny,nz
     !
@@ -105,21 +106,21 @@ module mod_forcing
     ! call mpi_allreduce(MPI_IN_PLACE,f(4),3,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr) ! Not needed, called in the velocity routine
   end subroutine force_scal
   !
-  subroutine force_bulk_vel(n,idir,zc,zf,dl,dz,l,psi,p,velf,f)
+  subroutine force_bulk_vel(n,nh,zc,zf,dl,dz,l,psi,p,velf,f)
     !
     ! bulk velocity forcing only in a region of the domain
     ! where psi is non-zero
     !
     implicit none
     integer , intent(in   ), dimension(3) :: n
-    integer , intent(in   ) :: idir
+    integer , intent(in   ) :: nh
     real(rp), intent(in   ) , dimension(3) :: dl,l
     real(rp), intent(in   ) , dimension(0:) :: dz
     real(rp), intent(in   ) , dimension(0:) :: zc,zf
     real(rp), intent(in   ), dimension(0:,0:,0:) :: psi
-    real(rp), intent(inout), dimension(0:,0:,0:) :: p
+    real(rp), intent(inout), dimension(1-nh:,1-nh:,1-nh:) :: p
     real(rp), intent(in   ) :: velf
-    real(rp), intent(out  ) :: f
+    real(rp), intent(inout  ) :: f
     integer :: i,j,k,nx,ny,nz
     real(rp) :: psis,mean_val,mean_psi,dx,dy
     !
