@@ -105,7 +105,7 @@ module mod_scal
          dsdta    = - ( usip - usim )*dxi &    
                     - ( vsjp - vsjm )*dyi &    
                     - ( wskp - wskm )*dzfi(k)
-#elif !defined(_WENO) & !defined(_IBM)
+#elif !defined(_WENO)
          dsdtd_xy = alph_f*(dsdip-dsdim)*dxi + &
                     alph_f*(dsdjp-dsdjm)*dyi
          dsdtd_z  = alph_f*(dsdkp-dsdkm)*dzfi(k)

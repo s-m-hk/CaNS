@@ -265,7 +265,8 @@ program cans
   allocate(psi_u(0:n(1)+1,0:n(2)+1,0:n(3)+1), &
            psi_v(0:n(1)+1,0:n(2)+1,0:n(3)+1), &
            psi_w(0:n(1)+1,0:n(2)+1,0:n(3)+1), &
-           psi(0:n(1)+1,0:n(2)+1,0:n(3)+1))
+           psi(0:n(1)+1,0:n(2)+1,0:n(3)+1),   &
+           marker(0:n(1)+1,0:n(2)+1,0:n(3)+1))
 #if defined(_IBM_BC)
   allocate(    psi_u(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
                psi_v(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
@@ -443,7 +444,7 @@ allocate(duconv(n(1),n(2),n(3)), &
 #if defined(_HEAT_TRANSFER)
     ! tmp(0:n(1)+1,0:n(2)+1,0:n(3)+1) = 0._rp
     !
-    call load('r',trim(datadir)//'fld.bin',MPI_COMM_WORLD,ng,nh_s,lo,hi,time,istep,u,v,w,p,s)
+    call load('r',trim(datadir)//'fld.bin',MPI_COMM_WORLD,ng,[nh_s,nh_s,nh_s],lo,hi,time,istep,u,v,w,p,s)
     !
     ! s(1:n(1),1:n(2),1:n(3)) = tmp(1:n(1),1:n(2),1:n(3))
     !
@@ -486,7 +487,7 @@ allocate(duconv(n(1),n(2),n(3)), &
 #if defined(_HEAT_TRANSFER)
   !$acc enter data copyin(s)
 #endif
-#if defined(_IBM) && defined(_HEAT_TRANSFER)
+#if defined(_IBM) && defined(_VOLUME) && defined(_HEAT_TRANSFER)
   !
   ! Set thermal diffusivity in fluid and solid regions
   !

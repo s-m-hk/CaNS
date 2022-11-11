@@ -85,45 +85,45 @@ subroutine initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,nh,halo,ng,nb,lo,hi,cell
                    ldz,zc,zf,zf_g,dzc,dzf,dl,dli, &
                    nx_surf,ny_surf,nz_surf,nabs_surf,i_mirror,j_mirror,k_mirror, &
                    i_IP1,j_IP1,k_IP1,i_IP2,j_IP2,k_IP2,WP1,WP2,deltan)
- implicit none
- character(len=1), intent(in), dimension(0:1,3,3)          :: cbcvel
- real(rp), intent(in), dimension(0:1,3,3)                  :: bcvel
- character(len=1), intent(in), dimension(0:1,3)            :: cbcpre
- real(rp), intent(in), dimension(0:1,3)                    :: bcpre
- integer , intent(in), dimension(0:1,3  )                  :: nb
+implicit none
+character(len=1), intent(in), dimension(0:1,3,3)          :: cbcvel
+real(rp), intent(in), dimension(0:1,3,3)                  :: bcvel
+character(len=1), intent(in), dimension(0:1,3)            :: cbcpre
+real(rp), intent(in), dimension(0:1,3)                    :: bcpre
+integer , intent(in), dimension(0:1,3  )                  :: nb
 integer , intent(in)                                       :: nh
 integer , intent(in), dimension(3)                         :: halo
- logical , intent(in), dimension(0:1,3  )                  :: is_bound
- integer , intent(in), dimension(3)                        :: n,ng,lo,hi
- integer , intent(in )                                     :: ldz
- real(rp), intent(in ), dimension(ldz:)                    :: zc,zf,zf_g,dzc,dzf,dl,dli
- real(rp), intent(in ), dimension(1:n(1),1:n(2))           :: surf_height
- #if defined(_IBM_BC)
- real(rp), intent(out),dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) :: cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag
- integer,  intent(out),dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) :: Level_set
- #else
- real(rp), intent(out),dimension(0:n(1)+1,0:n(2)+1,0:n(3)+1) :: cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag
- integer,  intent(out),dimension(0:n(1)+1,0:n(2)+1,0:n(3)+1) :: Level_set
- #endif
- real(rp), dimension(:,:,:), allocatable :: tmp
- integer,optional,intent(out),dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) :: i_mirror,j_mirror,k_mirror, &
+logical , intent(in), dimension(0:1,3  )                  :: is_bound
+integer , intent(in), dimension(3)                        :: n,ng,lo,hi
+integer , intent(in )                                     :: ldz
+real(rp), intent(in ), dimension(ldz:)                    :: zc,zf,zf_g,dzc,dzf,dl,dli
+real(rp), intent(in ), dimension(1:n(1),1:n(2))           :: surf_height
+#if defined(_IBM_BC)
+real(rp), intent(out),dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) :: cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag
+integer,  intent(out),dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) :: Level_set
+#else
+real(rp), intent(out),dimension(0:n(1)+1,0:n(2)+1,0:n(3)+1) :: cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag
+integer,  intent(out),dimension(0:n(1)+1,0:n(2)+1,0:n(3)+1) :: Level_set
+#endif
+real(rp), dimension(:,:,:), allocatable :: tmp
+integer,optional,intent(out),dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) :: i_mirror,j_mirror,k_mirror, &
                                                                           i_IP1,j_IP1,k_IP1, &
                                                                           i_IP2,j_IP2,k_IP2
- real(rp), dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6),     intent(out), optional :: nx_surf,ny_surf,nz_surf,nabs_surf,deltan
- real(rp), dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6,1:7), intent(out), optional :: WP1,WP2
- real(rp), dimension(:,:,:), allocatable :: z_intersect(:,:,:),y_intersect(:,:,:), x_intersect(:,:,:)
- real(rp), dimension(:,:,:), allocatable :: x_mirror(:,:,:), y_mirror(:,:,:), z_mirror(:,:,:)
- real(rp), dimension(:,:,:), allocatable :: x_IP1(:,:,:), y_IP1(:,:,:), z_IP1(:,:,:) !can be deallocated later
- real(rp), dimension(:,:,:), allocatable :: x_IP2(:,:,:), y_IP2(:,:,:), z_IP2(:,:,:) !can be deallocated later
- real(rp) :: dummy_time
- integer  :: dummy_istep
- integer  :: i,j,k,nx,ny,nz,h,idir
- logical  :: is_data
- !
+real(rp), dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6),     intent(out), optional :: nx_surf,ny_surf,nz_surf,nabs_surf,deltan
+real(rp), dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6,1:7), intent(out), optional :: WP1,WP2
+real(rp), dimension(:,:,:), allocatable :: z_intersect(:,:,:),y_intersect(:,:,:), x_intersect(:,:,:)
+real(rp), dimension(:,:,:), allocatable :: x_mirror(:,:,:), y_mirror(:,:,:), z_mirror(:,:,:)
+real(rp), dimension(:,:,:), allocatable :: x_IP1(:,:,:), y_IP1(:,:,:), z_IP1(:,:,:) !can be deallocated later
+real(rp), dimension(:,:,:), allocatable :: x_IP2(:,:,:), y_IP2(:,:,:), z_IP2(:,:,:) !can be deallocated later
+real(rp) :: dummy_time
+integer  :: dummy_istep
+integer  :: i,j,k,nx,ny,nz,h,idir
+logical  :: is_data
+!
  nx = n(1)
  ny = n(2)
  nz = n(3)
- !
+!
  inquire(file=trim(datadir)//'IBM.bin',exist=is_data)
 
 if (.not.is_data) then
@@ -157,7 +157,7 @@ if (.not.is_data) then
       !$acc exit data copyout(tmp) async ! not needed on the device
    if (myid == 0)  print*, '*** Solid marker has been calculated! ***'
   !---------------------------------------------------------------------
-       call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
+       call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
        !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag)
        !$acc parallel loop gang collapse(3) default(present) async(1)
        do k=0,nz
