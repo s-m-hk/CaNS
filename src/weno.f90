@@ -1,7 +1,7 @@
 !
 ! SPDX-License-Identifier: MIT
 !
-module mod_gradls
+module mod_weno
   !
   use mod_types, only: rp
   !
@@ -58,9 +58,6 @@ module mod_gradls
         do i=1,nx
           !
           uxc = 0.5_rp*(ux(i-1,j,k)+ux(i,j,k))
-#if defined(_TWOD)
-          dphidx = 0._rp
-#else
           a   = nint(sign(1._rp,uxc))
           fm2 = a*(tmp(i-2*a,j,k) - tmp(i-3*a,j,k))*dxi
           fm1 = a*(tmp(i-1*a,j,k) - tmp(i-2*a,j,k))*dxi
@@ -84,7 +81,6 @@ module mod_gradls
           dfdlh2 = c12*fm1+c22*f0 +c32*fp1
           dfdlh3 = c13*f0 +c23*fp1+c33*fp2
           dphidx = we1*dfdlh1+we2*dfdlh2+we3*dfdlh3
-#endif
           !
           uyc = 0.5_rp*(uy(i,j-1,k)+uy(i,j,k))
           a   = nint(sign(1._rp,uyc))
@@ -144,5 +140,4 @@ module mod_gradls
     !
     return
   end subroutine weno5
-end module mod_gradls
-
+end module mod_weno
