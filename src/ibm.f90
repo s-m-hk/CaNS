@@ -123,7 +123,7 @@ do k=1,int(ratio*nz) ! Lower wall
       xxx = (i+lo(1)-1-.5)*dxl
       yyy = (j+lo(2)-1-.5)*dyl
       zzz = zc(k)
-	  ghost = height_map_ghost(xxx,yyy,zzz,i,j,dzc(k),n,surf_height)
+	  ghost = height_map_ghost(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
       if (ghost) then
           cell_phi_tag(i,j,k) = 1.
           Level_set(i,j,k)    = 1
@@ -154,7 +154,7 @@ do k=1,int(ratio*nz) ! Lower wall
             !$acc loop seq
             do l = 1,number_of_divisions
                xxx = cell_start_x + (l-1 )*dxx
-	           inside = height_map(xxx,yyy,zzz,dxl,dyl,i,j,dzc(k),n,surf_height,lo,hi)
+	           inside = height_map(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
                if (inside) counter = counter +1
             enddo
         enddo
@@ -176,7 +176,7 @@ do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
       xxx = (i+lo(1)-1-.5)*dxl
       yyy = (j+lo(2)-1-.5)*dyl
       zzz = length_z - zc(k)
-	  ghost = height_map_ghost(xxx,yyy,zzz,i,j,dzc(k),n,surf_height)
+	  ghost = height_map_ghost(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
       if (ghost) then
         cell_phi_tag(i,j,k) = 1.
         cell_u_tag(i,j,k)   = 1.
@@ -210,7 +210,7 @@ do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
             !$acc loop seq
             do l = 1,number_of_divisions
                xxx = cell_start_x + (l-1 )*dxx
-	           inside = height_map(xxx,yyy,zzz,dxl,dyl,i,j,dzc(k),n,surf_height,lo,hi)
+	           inside = height_map(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
                if (inside) counter = counter +1
             enddo
         enddo
@@ -487,13 +487,13 @@ function lattice(xIn, yIn, zIn, zf_g, dz, lengthx, lengthy, lengthz)
 
 end function lattice
 
-function height_map(xxx,yyy,zzz,dxl,dyl,ii,jj,dz,n,surf_height,lo,hi)
+function height_map(xxx,yyy,zzz,ii,jj,dxl,dyl,dz,n,surf_height,lo,hi)
 implicit none
 logical :: height_map,cond1,cond2,cond3
-integer ,intent(in), dimension(3) :: n,lo,hi
+integer , intent(in), dimension(3) :: n,lo,hi
 real(rp), intent(in ), dimension(1:n(1),1:n(2)) :: surf_height
 real(rp), intent(in):: xxx,yyy,zzz,dxl,dyl,dz
-integer, intent(in):: ii,jj
+integer , intent(in):: ii,jj
 
      height_map=.false.
 	 cond1 = zzz.le.surf_height(ii,jj)
@@ -507,13 +507,13 @@ integer, intent(in):: ii,jj
 
 end function height_map
 !
-function height_map_ghost(xxx,yyy,zzz,ii,jj,dz,n,surf_height)
+function height_map_ghost(xxx,yyy,zzz,ii,jj,dxl,dyl,dz,n,surf_height,lo,hi)
 implicit none
 logical :: height_map_ghost,cond1,cond2,cond3
-integer ,intent(in), dimension(3) :: n
+integer , intent(in), dimension(3) :: n,lo,hi
 real(rp), intent(in ), dimension(1:n(1),1:n(2)) :: surf_height
-real(rp), intent(in):: xxx,yyy,zzz,dz
-integer, intent(in):: ii,jj
+real(rp), intent(in):: xxx,yyy,zzz,dxl,dyl,dz
+integer , intent(in):: ii,jj
 
      height_map_ghost=.false.
 	 if (zzz.lt.surf_height(ii,jj)) height_map_ghost=.true.

@@ -1,7 +1,13 @@
 module mod_initIBM
 #if defined(_IBM)
 use mpi
-use mod_IBM
+#if !defined(_IBM_BC)
+use mod_IBM, only: IBM_Mask
+#else
+use mod_IBM, only: IBM_Mask, normal_vectors,intersect,mirrorpoints, &
+                   interpolation_2D_velocity,interpolation_dphi, &
+                   mirrorpoints_ijk, interpolation_mirror,InterpolationWeights
+#endif
 use mod_bound, only: bounduvw,boundp
 use mod_load
 use mod_param, only: datadir
