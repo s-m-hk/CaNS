@@ -179,14 +179,10 @@ module mod_forcing
 #endif
   end subroutine force_bulk_vel
   !
-  subroutine bulk_mean_ibm(n,idir,dl,dz,l,psi,p,mean)
-    !
-    ! bulk velocity forcing only in a region of the domain
-    ! where psi is non-zero
+  subroutine bulk_mean_ibm(n,dl,dz,l,psi,p,mean)
     !
     implicit none
     integer , intent(in   ), dimension(3) :: n
-    integer , intent(in   ) :: idir
     real(rp), intent(in   ) , dimension(3) :: dl,l ! l not used
     real(rp), intent(in   ) , dimension(0:) :: dz
     real(rp), intent(in   ), dimension(0:,0:,0:) :: psi

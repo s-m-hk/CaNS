@@ -12,7 +12,7 @@ use mod_types
 !@acc use cudecomp
 implicit none
 private
-#if defined(_SIMPLE)
+#if !defined(_IBM_BC)
 public IBM_Mask
 #else
 public IBM_Mask, normal_vectors,intersect,mirrorpoints, &
@@ -497,9 +497,13 @@ integer, intent(in):: ii,jj
 
      height_map=.false.
 	 cond1 = zzz.le.surf_height(ii,jj)
+#if defined(_IBM_BC)
 	 cond2 = abs((ii+lo(1)-1-.5)*dxl-xxx).le.(0.5*dxl)
 	 cond3 = abs((jj+lo(2)-1-.5)*dyl-yyy).le.(0.5*dyl)
 	 if (cond1.and.cond2.and.cond3) height_map=.true.
+#else
+	 if (cond1) height_map=.true.
+#endif
 
 end function height_map
 !

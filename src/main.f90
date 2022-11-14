@@ -293,6 +293,8 @@ program cans
   if(height_map)then !Read surface height-map and divide it among subdomains
      allocate(surf_z(1:ng(1),1:ng(2)))
      allocate(surf_height(1:n(1),1:n(2)))
+     surf_z(:,:) = 0._rp
+     surf_height(:,:) = 0._rp
      open(unit=3,file='k.dat',status='old',action='read')
      read(3,*) ((surf_z(i,j), i=1,ng(1)), j=1,ng(2))
      close(3)
@@ -785,23 +787,23 @@ allocate(duconv(n(1),n(2),n(3)), &
         meanvelw = 0.
 #if !defined(_IBM)
         if(is_forced(1).or.abs(bforce(1)) > 0.) then
-          call bulk_mean(n,grid_vol_ratio_f,u,meanvelu)
+          call bulk_mean(n,nh_v,grid_vol_ratio_f,u,meanvelu)
         end if
         if(is_forced(2).or.abs(bforce(2)) > 0.) then
-          call bulk_mean(n,grid_vol_ratio_f,v,meanvelv)
+          call bulk_mean(n,nh_v,grid_vol_ratio_f,v,meanvelv)
         end if
         if(is_forced(3).or.abs(bforce(3)) > 0.) then
-          call bulk_mean(n,grid_vol_ratio_c,w,meanvelw)
+          call bulk_mean(n,nh_v,grid_vol_ratio_c,w,meanvelw)
         end if
 #else
         if(is_forced(1).or.abs(bforce(1)).gt.0.) then
-          call bulk_mean_ibm(n,1,dl,dzf,l,psi_u,u,meanvelu)
+          call bulk_mean_ibm(n,dl,dzf,l,psi_u,u,meanvelu)
         endif
         if(is_forced(2).or.abs(bforce(2)).gt.0.) then
-          call bulk_mean_ibm(n,2,dl,dzf,l,psi_v,v,meanvelv)
+          call bulk_mean_ibm(n,dl,dzf,l,psi_v,v,meanvelv)
         endif
         if(is_forced(3).or.abs(bforce(3)).gt.0.) then
-          call bulk_mean_ibm(n,3,dl,dzc,l,psi_w,w,meanvelw)
+          call bulk_mean_ibm(n,dl,dzc,l,psi_w,w,meanvelw)
         endif
 #endif
         if(.not.any(is_forced(:))) dpdl(:) = -bforce(:) ! constant pressure gradient
