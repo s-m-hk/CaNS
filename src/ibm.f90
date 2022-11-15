@@ -80,19 +80,26 @@ real(rp):: length_z,xxx,yyy,zzz,dxx,dyy,dzz,dxl,dyl
 real(rp):: cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z
 real(rp):: counter,ratio
 logical :: inside,ghost
-integer, dimension(3) :: nh
-integer :: nx,ny,nz,kk
+integer :: nx,ny,nz,kk,s1,s2
+!
+s1 = 0; s2 = 0
+select case(surface_type)
+case('HeightMap')
+ s1 = 1
+case('WavyWall')
+ s2 = 1
+case default
+ s1 = 0
+ s2 = 0
+end select
+!
 dxl = dx
 dyl = dy
 length_z = lz
 nx = n(1)
 ny = n(2)
 nz = n(3)
-#if defined(_IBM_BC)
-nh(1:3) = 6
-#else
-nh(1:3) = 1
-#endif
+!
 #if !defined(_DECOMP_Z)
 ratio = 1.
 #else
@@ -108,7 +115,7 @@ number_of_divisions = 100
 #if defined(_GPU)
 if (myid == 0) print*, '*** Calculating volume fractions ***'
 #endif
-if(trim(surface_type) == 'HeightMap') then
+if( (trim(surface_type) == 'HeightMap') .or. (trim(surface_type) == 'WavyWall') ) then
 !!
 #if !defined(_DECOMP_Z)
 if(.not.is_bound(1,3)) then
@@ -116,14 +123,15 @@ if(.not.is_bound(1,3)) then
 !$acc parallel loop gang collapse(3) default(present) private(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
 do k=1,int(ratio*nz) ! Lower wall
 #if !defined(_GPU)
-  if (myid == 0) print*, '*** Calculating volume fractions at k = ', k
+  if (myid == 0) print*, '*** Calculating volume fractions at plane k = ', k,' ***'
 #endif
   do j=1,ny
     do i=1,nx
       xxx = (i+lo(1)-1-.5)*dxl
       yyy = (j+lo(2)-1-.5)*dyl
       zzz = zc(k)
-	  ghost = height_map_ghost(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
+	  if(s1 == 1) ghost = height_map_ghost(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
+	  if(s2 == 1) ghost = wavywall_ghost(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
       if (ghost) then
           cell_phi_tag(i,j,k) = 1.
           Level_set(i,j,k)    = 1
@@ -154,7 +162,8 @@ do k=1,int(ratio*nz) ! Lower wall
             !$acc loop seq
             do l = 1,number_of_divisions
                xxx = cell_start_x + (l-1 )*dxx
-	           inside = height_map(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
+	           if(s1 == 1) inside = height_map(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
+	           if(s2 == 1) inside = wavywall(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
                if (inside) counter = counter +1
             enddo
         enddo
@@ -176,7 +185,8 @@ do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
       xxx = (i+lo(1)-1-.5)*dxl
       yyy = (j+lo(2)-1-.5)*dyl
       zzz = length_z - zc(k)
-	  ghost = height_map_ghost(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
+	  if(s1 == 1) ghost = height_map_ghost(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
+	  if(s2 == 1) ghost = wavywall_ghost(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
       if (ghost) then
         cell_phi_tag(i,j,k) = 1.
         cell_u_tag(i,j,k)   = 1.
@@ -210,7 +220,8 @@ do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
             !$acc loop seq
             do l = 1,number_of_divisions
                xxx = cell_start_x + (l-1 )*dxx
-	           inside = height_map(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
+	           if(s1 == 1) inside = height_map(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
+	           if(s2 == 1) inside = wavywall(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
                if (inside) counter = counter +1
             enddo
         enddo
@@ -355,8 +366,8 @@ endif
 kk = 1
 !$acc parallel loop gang default(present) async(1)
 do k = nz,(nz-int(ratio*nz)),-1
-     cell_phi_tag(1:n(1),1:n(2),k) = cell_phi_tag(1:n(1),1:n(2),kk)
-	 kk = kk + 1
+     cell_phi_tag(:,:,k) = cell_phi_tag(:,:,kk)
+	 kk = kk + 1   
 enddo
 #endif
 
@@ -615,39 +626,55 @@ end function sphere_ghost
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-function wavywall(xxx,yyy,zzz,ii,jj,dz,lo,hi) !Maaß and Schumann, ERCOFTAC classic case
+function wavywall(xxx,yyy,zzz,ii,jj,dxl,dyl,dz,n,surf_height,lo,hi) !Maaß and Schumann, ERCOFTAC classic case
 implicit none
 logical :: wavywall,cond1,cond2,cond3
-real(rp), intent(in):: xxx,yyy,zzz,dz
-real(rp):: AA
-integer ,intent(in), dimension(3) :: lo,hi
+integer , intent(in), dimension(3) :: n,lo,hi
+real(rp), intent(in ), dimension(1:n(1),1:n(2)) :: surf_height
+real(rp), intent(in):: xxx,yyy,zzz,dxl,dyl,dz
 integer, intent(in):: ii,jj
+real(rp):: zw
 
      wavywall=.false.
-     AA = 0.05*cos(2.*(4.*atan(1.))*((ii+lo(1)-1-.5)*dx))
-	 cond1 = zzz.le.AA
-	 cond2 = abs((ii+lo(1)-1-.5)*dx-xxx).le.(0.5*dx)
-	 cond3 = abs((jj+lo(2)-1-.5)*dy-yyy).le.(0.5*dy)
+
+     ! zw = 0.05*cos(2.*(4.*atan(1.))*xxx
+     zw = (2._rp/18._rp) &
+                          + (1._rp/18._rp)*cos(2._rp*(4._rp*atan(1._rp))*xxx/(7.1_rp/18._rp)) &
+                          *cos(2._rp*(4._rp*atan(1._rp))*yyy/(7.1_rp/18._rp))
+	 cond1 = zzz.le.zw
+#if defined(_IBM_BC)
+	 cond2 = abs((ii+lo(1)-1-.5)*dxl-xxx).le.(0.5*dxl)
+	 cond3 = abs((jj+lo(2)-1-.5)*dyl-yyy).le.(0.5*dyl)
 	 if (cond1.and.cond2.and.cond3) wavywall=.true.
+#else
+	 if (cond1) wavywall=.true.
+#endif
 
 end function wavywall
 !
-function wavywall_ghost(xxx,yyy,zzz,ii,jj,dz,lo,hi)
+function wavywall_ghost(xxx,yyy,zzz,ii,jj,dxl,dyl,dz,n,surf_height,lo,hi)
 implicit none
 logical :: wavywall_ghost,cond1,cond2
-real(rp), intent(in):: xxx,yyy,zzz,dz
-real(rp):: AA
-integer ,intent(in), dimension(3) :: lo,hi
-integer, intent(in):: ii,jj
+integer , intent(in), dimension(3) :: n,lo,hi
+real(rp), intent(in ), dimension(1:n(1),1:n(2)) :: surf_height
+real(rp), intent(in):: xxx,yyy,zzz,dxl,dyl,dz
+integer,  intent(in):: ii,jj
+real(rp):: zw
 
-     AA = 0.05*2.*cos(2.*(4.*atan(1._rp))*((ii+lo(1)-1-.5)*dx/2.))
 	 wavywall_ghost=.false.
-	 cond1 = (AA.gt.zzz)
-	 cond2 = (abs(AA-zzz).lt.dz)
-     if (cond1.and.cond2) wavywall_ghost=.true.
+
+     ! zw = 0.05*2.*cos(2.*(4.*atan(1._rp))*((ii+lo(1)-1-.5)*dxl/2.))
+     zw = (2._rp/18._rp) &
+                          + (1._rp/18._rp)*cos(2._rp*(4._rp*atan(1._rp))*xxx/(7.1_rp/18._rp)) &
+                          *cos(2._rp*(4._rp*atan(1._rp))*yyy/(7.1_rp/18._rp))
+     cond1 = zzz.le.zw
+	 ! cond1 = (zw.gt.zzz)
+	 ! cond2 = (abs(zw-zzz).lt.dz)
+     ! if (cond1.and.cond2) wavywall_ghost=.true.
+     if (cond1) wavywall_ghost=.true.
 
 end function wavywall_ghost
-#if defined(_VOLUME)
+#if defined(_VOLUME) && defined(_IBM_BC)
 Subroutine normal_vectors(lo,hi,Level_set,cell_phi_tag,nx_surf,ny_surf,nz_surf,nabs_surf, &
                           nx_surf_nonnorm,ny_surf_nonnorm,nz_surf_nonnorm,zc,zf,dzc,dzf,dl,dli,n,surf_height)
 implicit none
