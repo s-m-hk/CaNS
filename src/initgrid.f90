@@ -56,9 +56,9 @@ module mod_initgrid
       open(unit=12,file='zf.dat',status='old',action='read')
       read(12,*) (zf(k), k=0,n)
       close(12)
-      lz = zf(n)-zf(0)
       k=n+1
       zf(k) = 2._rp*zf(k-1)-zf(k-2)
+      lz = zf(n+1)-zf(0)
     if(myid == 0) print*, '*** Wall-normal coordinates read ***'
     endif
     !
