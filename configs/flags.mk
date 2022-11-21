@@ -104,14 +104,11 @@ DEFINES += -D_DECOMP_Y
 else ifeq ($(strip $(DECOMP_Z)),1)
 DEFINES += -D_DECOMP_Z
 endif
-ifeq ($(strip $(VOLUME)),0)
 ifeq      ($(strip $(PENCIL_AXIS)),1)
 DEFINES += -D_DECOMP_X
 else ifeq ($(strip $(PENCIL_AXIS)),2)
 DEFINES += -D_DECOMP_Y
-endif
-endif
-ifeq ($(strip $(PENCIL_AXIS)),3)
+else ifeq ($(strip $(PENCIL_AXIS)),3)
 DEFINES += -D_DECOMP_Z
 endif
 ifeq ($(strip $(SINGLE_PRECISION)),1)
@@ -142,12 +139,14 @@ endif
 ifeq ($(strip $(IBM)),1)
 DEFINES += -D_IBM
 endif
+ifeq ($(strip $(SYMMETRIC)),1)
+DEFINES += -D_SYMMETRIC
+endif
 ifeq ($(strip $(SIMPLE)),1)
 DEFINES += -D_SIMPLE
 endif
 ifeq ($(strip $(VOLUME)),1)
 DEFINES += -D_VOLUME
-DEFINES += -D_DECOMP_Z
 endif
 ifeq ($(strip $(IBM_BC)),1)
 DEFINES += -D_IBM_BC
@@ -165,10 +164,10 @@ ifeq ($(strip $(ISOTHERMAL)),1)
 DEFINES += -D_ISOTHERMAL
 endif
 ifeq ($(strip $(LPP_GPU)),1)
-DEFINES += -D_ISOTHERMAL
+DEFINES += -D_LPP_GPU
 endif
 ifeq ($(strip $(LPP_CPU)),1)
-DEFINES += -D_ISOTHERMAL
+DEFINES += -D_LPP_CPU
 endif
 
 ifeq ($(strip $(OPENMP)),1)
