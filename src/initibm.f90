@@ -21,39 +21,38 @@ contains
 #if defined(_SIMPLE)
 subroutine initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,nh,halo,ng,nb,lo,hi,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag, &
                    ldz,zc,zf,zf_g,dzc,dzf,dl,dli)
- implicit none
- character(len=1), intent(in), dimension(0:1,3,3)            :: cbcvel
- real(rp), intent(in), dimension(0:1,3,3)                    :: bcvel
- character(len=1), intent(in), dimension(0:1,3)              :: cbcpre
- real(rp), intent(in), dimension(0:1,3)                      :: bcpre
- integer , intent(in), dimension(0:1,3  )                    :: nb
- integer , intent(in)                                        :: nh
- integer , intent(in), dimension(3)                          :: halo
- logical , intent(in), dimension(0:1,3  )                    :: is_bound
- integer , intent(in), dimension(3)                          :: n,ng,lo,hi
- integer , intent(in )                                       :: ldz
- real(rp), intent(in ), dimension(ldz:)                      :: zc,zf,zf_g,dzc,dzf,dl,dli
- real(rp), intent(out),dimension(0:,0:,0:) :: cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag
- real(rp) :: dummy_time
- integer  :: dummy_istep
- integer  :: i,j,k,nx,ny,nz,idir
- logical  :: is_data
- !
- nx = n(1)
- ny = n(2)
- nz = n(3)
- !
- inquire(file=trim(datadir)//'IBM.bin',exist=is_data)
+implicit none
+character(len=1), intent(in), dimension(0:1,3,3)            :: cbcvel
+real(rp), intent(in), dimension(0:1,3,3)                    :: bcvel
+character(len=1), intent(in), dimension(0:1,3)              :: cbcpre
+real(rp), intent(in), dimension(0:1,3)                      :: bcpre
+integer , intent(in), dimension(0:1,3  )                    :: nb
+integer , intent(in)                                        :: nh
+integer , intent(in), dimension(3)                          :: halo
+logical , intent(in), dimension(0:1,3  )                    :: is_bound
+integer , intent(in), dimension(3)                          :: n,ng,lo,hi
+integer , intent(in )                                       :: ldz
+real(rp), intent(in ), dimension(ldz:)                      :: zc,zf,zf_g,dzc,dzf,dl,dli
+real(rp), intent(out),dimension(0:,0:,0:) :: cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag
+real(rp) :: dummy_time
+integer  :: dummy_istep
+integer  :: i,j,k,nx,ny,nz,idir
+logical  :: is_data
+!
+nx = n(1)
+ny = n(2)
+nz = n(3)
+!
+cell_u_tag(:,:,:)    = 0._rp
+cell_v_tag(:,:,:)    = 0._rp
+cell_w_tag(:,:,:)    = 0._rp
+cell_phi_tag(:,:,:)  = 0._rp
+!
+inquire(file=trim(datadir)//'IBM.bin',exist=is_data)
 
- if (.not.is_data) then
-   !
-   cell_u_tag(:,:,:)    = 0._rp
-   cell_v_tag(:,:,:)    = 0._rp
-   cell_w_tag(:,:,:)    = 0._rp
-   cell_phi_tag(:,:,:)  = 0._rp
-   !
-   call IBM_mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,cell_phi_tag)
+if (.not.is_data) then
    !$acc enter data copyin(cell_phi_tag)
+   call IBM_mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,cell_phi_tag)
    call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
    !
    do k=0,nz
@@ -71,15 +70,15 @@ subroutine initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,nh,halo,ng,nb,lo,hi,cell
    dummy_time = 0.; dummy_istep = 0
    !$acc update self(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
    call load('w',trim(datadir)//'IBM.bin',MPI_COMM_WORLD,ng,[1,1,1],lo,hi,dummy_time,dummy_istep,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
- else
+else
    call load('r',trim(datadir)//'IBM.bin',MPI_COMM_WORLD,ng,[1,1,1],lo,hi,dummy_time,dummy_istep,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
    !
    !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
     call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
     call bounduvw(cbcvel,n,nh,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
-  if (myid == 0)  print*, '*** Stored IBM data loaded ***'
+  if (myid == 0)  print*, '*** Saved IBM data loaded ***'
    !---------------------------------------------------------------------
- endif
+endif
 
 end subroutine initIBM
 #endif
@@ -97,8 +96,8 @@ real(rp), intent(in), dimension(0:1,3,3)                  :: bcvel
 character(len=1), intent(in), dimension(0:1,3)            :: cbcpre
 real(rp), intent(in), dimension(0:1,3)                    :: bcpre
 integer , intent(in), dimension(0:1,3  )                  :: nb
-integer , intent(in)                                       :: nh
-integer , intent(in), dimension(3)                         :: halo
+integer , intent(in)                                      :: nh
+integer , intent(in), dimension(3)                        :: halo
 logical , intent(in), dimension(0:1,3  )                  :: is_bound
 integer , intent(in), dimension(3)                        :: n,ng,lo,hi
 integer , intent(in )                                     :: ldz
@@ -126,11 +125,17 @@ integer  :: dummy_istep
 integer  :: i,j,k,nx,ny,nz,h,idir
 logical  :: is_data
 !
- nx = n(1)
- ny = n(2)
- nz = n(3)
+nx = n(1)
+ny = n(2)
+nz = n(3)
 !
- inquire(file=trim(datadir)//'IBM.bin',exist=is_data)
+cell_u_tag(:,:,:)    = 0.
+cell_v_tag(:,:,:)    = 0.
+cell_w_tag(:,:,:)    = 0.
+cell_phi_tag(:,:,:)  = 0.
+Level_set(:,:,:)     = 0
+!
+inquire(file=trim(datadir)//'IBM.bin',exist=is_data)
 
 if (.not.is_data) then
 #if defined(_IBM_BC)
@@ -147,12 +152,6 @@ if (.not.is_data) then
   allocate(tmp(-1:n(1)+1,-1:n(2)+1,-1:n(3)+1))
 #endif
 
-  cell_u_tag(:,:,:)    = 0.
-  cell_v_tag(:,:,:)    = 0.
-  cell_w_tag(:,:,:)    = 0.
-  cell_phi_tag(:,:,:)  = 0.
-  Level_set(:,:,:)     = 0
-
   !$acc enter data copyin(cell_phi_tag,Level_set)
   call IBM_mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,is_bound,cell_phi_tag,Level_set,surf_height)
 
@@ -161,7 +160,7 @@ if (.not.is_data) then
        call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,tmp)
        Level_set(:,:,:) = int(tmp(:,:,:),i8)
       !$acc exit data copyout(tmp) async ! not needed on the device
-   if (myid == 0)  print*, '*** Solid marker has been calculated! ***'
+   if (myid == 0)  print*, '*** Solid marker set! ***'
   !---------------------------------------------------------------------
        call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
        !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag)
@@ -176,7 +175,7 @@ if (.not.is_data) then
         enddo
        enddo
        call bounduvw(cbcvel,n,nh,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
-   if (myid == 0)  print*, '*** Volume fractions have been calculated! ***'
+   if (myid == 0)  print*, '*** Volume fractions calculated! ***'
   !---------------------------------------------------------------------
 
 #if defined(_IBM_BC)
@@ -192,7 +191,7 @@ if (.not.is_data) then
      !$acc enter data copyin(nx_surf,ny_surf,nz_surf,nabs_surf)
      call bounduvw(cbcvel,n,nh,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,nx_surf,ny_surf,nz_surf)
      call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,nabs_surf)
-  if (myid.eq.0)  print*, '*** Normal vectors have been calculated! ***'
+  if (myid.eq.0)  print*, '*** Normal vectors calculated! ***'
   !*********************************************************************
   x_intersect(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) = 0.
   y_intersect(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) = 0.
@@ -312,6 +311,7 @@ deallocate(x_mirror,y_mirror,z_mirror)
                WP1,WP2)
 #else
    dummy_time = 0.; dummy_istep = 0
+   !$acc update self(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
    call load('w',trim(datadir)//'IBM.bin',MPI_COMM_WORLD,ng,[1,1,1],lo,hi,dummy_time,dummy_istep,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
 #endif
 else
@@ -360,8 +360,8 @@ else
    ! allocate(tmp(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6))
    !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
    ! tmp(:,:,:) = real(Level_set(:,:,:),rp)
-   call bounduvw(cbcvel,n,nh,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
    call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
+   call bounduvw(cbcvel,n,nh,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
    ! call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,tmp)
    ! Level_set(:,:,:) = int(tmp(:,:,:),i8)
 #endif
