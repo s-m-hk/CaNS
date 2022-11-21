@@ -189,9 +189,6 @@ do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
 	  if(s2 == 1) ghost = wavywall_ghost(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
       if (ghost) then
         cell_phi_tag(i,j,k) = 1.
-        cell_u_tag(i,j,k)   = 1.
-        cell_v_tag(i,j,k)   = 1.
-        cell_w_tag(i,j,k)   = 1.
         Level_set(i,j,k)    = 1
       endif
 
