@@ -480,7 +480,7 @@ allocate(duconv(n(1),n(2),n(3)), &
   !$acc update self(psi_u,psi_v,psi_w,psi)
   call out1d(trim(datadir)//'psi_u.out',ng,lo,hi,3,l,dl,zc_g,dzf,psi_u)
   call out1d(trim(datadir)//'psi_v.out',ng,lo,hi,3,l,dl,zc_g,dzf,psi_v)
-  call out1d(trim(datadir)//'psi_w.out',ng,lo,hi,3,l,dl,zc_g,dzf,psi_w)
+  call out1d(trim(datadir)//'psi_w.out',ng,lo,hi,3,l,dl,zf_g,dzc,psi_w)
   call out1d(trim(datadir)//'psi.out'  ,ng,lo,hi,3,l,dl,zc_g,dzf,psi  )
   if(myid == 0) print*, '*** IBM Initialized ***'
 #endif
