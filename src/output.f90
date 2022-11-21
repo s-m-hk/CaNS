@@ -357,9 +357,9 @@ module mod_output
       if(myid == 0) then
         open(newunit=iunit,file=fname)
         do k=1,ng(3)
-          write(iunit,'(8E16.7e3)') z_g(k),um(k),vm(k),wm(k),pm(k), &
-                                           u2(k),v2(k),w2(k),p2(k), &
-                                           uw(k)
+          write(iunit,'(10E16.7e3)') z_g(k),um(k),vm(k),wm(k),pm(k), &
+                                            u2(k),v2(k),w2(k),p2(k), &
+                                            uw(k)
         end do
         close(iunit)
       end if
@@ -562,7 +562,7 @@ module mod_output
     if(myid.eq.0) then
        open(newunit=iunit,file=fname)
        do k=1,ng(3)
-         write(iunit,'(8E16.7e3)') z_g(k),sm(k),s2(k), &
+         write(iunit,'(6E16.7e3)') z_g(k),sm(k),s2(k), &
                                           us(k),vs(k),ws(k)
        enddo
       close(iunit)
