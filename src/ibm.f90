@@ -112,19 +112,14 @@ number_of_divisions = 50
 #else
 number_of_divisions = 100
 #endif
-#if defined(_GPU)
 if (myid == 0) print*, '*** Calculating volume fractions ***'
-#endif
 if( (trim(surface_type) == 'HeightMap') .or. (trim(surface_type) == 'WavyWall') ) then
 !!
 #if !defined(_DECOMP_Z)
-if(.not.is_bound(1,3)) then
+if( (.not.is_bound(1,3)).and.(lo(3).lt.int(ng(3)/2)) ) then
 #endif
 !$acc parallel loop gang collapse(3) default(present) private(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
 do k=1,int(ratio*nz) ! Lower wall
-#if !defined(_GPU)
-  if (myid == 0) print*, '*** Calculating volume fractions at plane k = ', k,' ***'
-#endif
   do j=1,ny
     do i=1,nx
       xxx = (i+lo(1)-1-.5)*dxl
@@ -177,7 +172,7 @@ enddo
 endif
 #endif
 #if !defined(_DECOMP_Z) && defined(_SYMMETRIC)
-if(.not.is_bound(0,3)) then
+if( (.not.is_bound(0,3)).and.(lo(3).gt.int(ng(3)/2)) ) then
 !$acc parallel loop gang collapse(3) default(present) private(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
 do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
   do j=1,ny
