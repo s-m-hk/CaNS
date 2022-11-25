@@ -718,8 +718,8 @@ allocate(duconv(n(1),n(2),n(3)), &
 #endif
 #endif
       dpdl(:) = dpdl(:) + f(1:3)
-#if defined(_HEAT_TRANSFER)
-      ! call boundp(cbctmp,n,nh_s,halo_s,bctmp,nb,is_bound,dl,dzc,s)
+#if defined(_IBM)
+      fibmtot(:) = fibmtot(:) + fibm(:)
 #endif
       call bounduvw(cbcvel,n,nh_v,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,u,v,w)
       call fillps(n,dli,dzfi,dtrki,u,v,w,pp)
@@ -814,8 +814,13 @@ allocate(duconv(n(1),n(2),n(3)), &
       end if
 #if defined(_IBM)
       var(1)   = time
+#if defined(_HEAT_TRANSFER)
+      var(2:5) = fibmtot(1:4)
+      call out0d(trim(datadir)//'forcing_ibm.out',5,var)
+#else
       var(2:4) = fibmtot(1:3)
       call out0d(trim(datadir)//'forcing_ibm.out',4,var)
+#endif
 #endif
     end if
     write(fldnum,'(i7.7)') istep

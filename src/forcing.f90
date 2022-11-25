@@ -2,7 +2,7 @@
 module mod_forcing
   use mpi
   use mod_types
-  use mod_common_mpi, only: ierr
+  use mod_common_mpi, only: myid,ierr
   implicit none
   private
   public force_vel,force_scal,force_bulk_vel,bulk_mean_ibm
@@ -22,11 +22,11 @@ module mod_forcing
     !
     implicit none
     integer , intent(in), dimension(3) :: n
-    real(rp), intent(in   ) , dimension(3) :: dl,l
-    real(rp), intent(in   ) , dimension(0:) :: dzc,dzf
-    real(rp), intent(in   ) , dimension(0:,0:,0:) :: psi_u,psi_v,psi_w
-    real(rp), intent(inout) , dimension(0:,0:,0:) :: u,v,w
-    real(rp), intent(inout  ), dimension(4) :: f
+    real(rp), intent(in   ), dimension(3) :: dl,l
+    real(rp), intent(in   ), dimension(0:) :: dzc,dzf
+    real(rp), intent(in   ), dimension(0:,0:,0:) :: psi_u,psi_v,psi_w
+    real(rp), intent(inout), dimension(0:,0:,0:) :: u,v,w
+    real(rp), intent(out  ), dimension(4) :: f
     real(rp) :: psix,psiy,psiz,fx,fy,fz,fxtot,fytot,fztot,dx,dy
     integer :: i,j,k,nx,ny,nz
     !
@@ -35,7 +35,11 @@ module mod_forcing
     nz = n(3)
     dx = dl(1)
     dy = dl(2)
-    !$acc parallel loop collapse(3) default(present) private(psix,psiy,psiz,fx,fy,fz,fxtot,fytot,fztot) async(1)
+    fxtot = 0._rp
+    fytot = 0._rp
+    fztot = 0._rp
+    !$acc data copy(fxtot,fytot,fztot) async(1)
+    !$acc parallel loop collapse(3) default(present) private(psix,psiy,psiz,fx,fy,fz) reduction(+:fxtot,fytot,fztot) async(1)
     !$OMP PARALLEL DO DEFAULT(none) &
     !$OMP SHARED(n,u,v,w,psi_u,psi_v,psi_w,dl,dzc,dzf) &
     !$OMP PRIVATE(i,j,k,fx,fy,fz,psix,psiy,psiz) &
@@ -62,11 +66,14 @@ module mod_forcing
         enddo
       enddo
     enddo
+    !$acc end data
     !$acc wait(1)
+    call MPI_ALLREDUCE(MPI_IN_PLACE,fxtot,1,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_ALLREDUCE(MPI_IN_PLACE,fytot,1,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_ALLREDUCE(MPI_IN_PLACE,fztot,1,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
     f(1) = fxtot/(l(1)*l(2)*l(3))
     f(2) = fytot/(l(1)*l(2)*l(3))
     f(3) = fztot/(l(1)*l(2)*l(3))
-    call mpi_allreduce(MPI_IN_PLACE,f(1),3,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
   end subroutine force_vel
   !
   subroutine force_scal(n,nh_s,dl,dz,l,psi,s,f)
