@@ -108,7 +108,7 @@ module mod_bound
      call updthalo_gpu(nh,cbc(0,:)//cbc(1,:)==['PP','PP','PP'],p)
     elseif (nh == 3) then
      call updthalo_gpu_scal(nh,cbc(0,:)//cbc(1,:)==['PP','PP','PP'],p)
-    elseif (nh == 6) then
+    ! elseif (nh == 6) then
      ! call updthalo_gpu_ibm(nh,cbc(0,:)//cbc(1,:)==['PP','PP','PP'],p)
     endif
 #endif
@@ -468,7 +468,9 @@ module mod_bound
     real(rp), dimension(1-nh:,1-nh:,1-nh:), intent(inout) :: p
     integer , dimension(3) :: lo,hi
     integer                :: h
-    !integer :: requests(4)
+#if defined(_ASYNC_HALO)
+    integer :: requests(4)
+#endif
     !
     !  this subroutine updates the halo that store info
     !  from the neighboring computational sub-domain
@@ -479,53 +481,62 @@ module mod_bound
      hi(:) = ubound(p)-h
      select case(idir)
      case(1) ! x direction
+#if !defined(_ASYNC_HALO)
        call MPI_SENDRECV(p(lo(1)     ,lo(2)-nh,lo(3)-nh),1,halo,nb(0),0, &
                          p(hi(1)+1   ,lo(2)-nh,lo(3)-nh),1,halo,nb(1),0, &
                          MPI_COMM_WORLD,MPI_STATUS_IGNORE,ierr)
        call MPI_SENDRECV(p(hi(1)-nh+1,lo(2)-nh,lo(3)-nh),1,halo,nb(1),0, &
                          p(lo(1)-nh  ,lo(2)-nh,lo(3)-nh),1,halo,nb(0),0, &
                          MPI_COMM_WORLD,MPI_STATUS_IGNORE,ierr)
-       !call MPI_IRECV( p(hi(1)+1   ,lo(2)-nh,lo(3)-nh),1,halo,nb(1),0, &
-       !                MPI_COMM_WORLD,requests(1),ierr)
-       !call MPI_IRECV( p(lo(1)-nh  ,lo(2)-nh,lo(3)-nh),1,halo,nb(0),1, &
-       !                MPI_COMM_WORLD,requests(2),ierr)
-       !call MPI_ISSEND(p(lo(1)     ,lo(2)-nh,lo(3)-nh),1,halo,nb(0),0, &
-       !                MPI_COMM_WORLD,requests(3),ierr)
-       !call MPI_ISSEND(p(hi(1)-nh+1,lo(2)-nh,lo(3)-nh),1,halo,nb(1),1, &
-       !                MPI_COMM_WORLD,requests(4),ierr)
-       !call MPI_WAITALL(4,requests,MPI_STATUSES_IGNORE,ierr)
+#else
+       call MPI_IRECV( p(hi(1)+1   ,lo(2)-nh,lo(3)-nh),1,halo,nb(1),0, &
+                      MPI_COMM_WORLD,requests(1),ierr)
+       call MPI_IRECV( p(lo(1)-nh  ,lo(2)-nh,lo(3)-nh),1,halo,nb(0),1, &
+                      MPI_COMM_WORLD,requests(2),ierr)
+       call MPI_ISEND(p(lo(1)     ,lo(2)-nh,lo(3)-nh),1,halo,nb(0),0, &
+                      MPI_COMM_WORLD,requests(3),ierr)
+       call MPI_ISEND(p(hi(1)-nh+1,lo(2)-nh,lo(3)-nh),1,halo,nb(1),1, &
+                      MPI_COMM_WORLD,requests(4),ierr)
+       call MPI_WAITALL(4,requests,MPI_STATUSES_IGNORE,ierr)
+#endif
      case(2) ! y direction
+#if !defined(_ASYNC_HALO)
        call MPI_SENDRECV(p(lo(1)-nh,lo(2)     ,lo(3)-nh),1,halo,nb(0),0, &
                          p(lo(1)-nh,hi(2)+1   ,lo(3)-nh),1,halo,nb(1),0, &
                          MPI_COMM_WORLD,MPI_STATUS_IGNORE,ierr)
        call MPI_SENDRECV(p(lo(1)-nh,hi(2)-nh+1,lo(3)-nh),1,halo,nb(1),0, &
                          p(lo(1)-nh,lo(2)-nh  ,lo(3)-nh),1,halo,nb(0),0, &
                          MPI_COMM_WORLD,MPI_STATUS_IGNORE,ierr)
-       !call MPI_IRECV( p(lo(1)-nh,hi(2)+1   ,lo(3)-nh),1,halo,nb(1),0, &
-       !                MPI_COMM_WORLD,requests(1),ierr)
-       !call MPI_IRECV( p(lo(1)-nh,lo(2)-nh  ,lo(3)-nh),1,halo,nb(0),1, &
-       !                MPI_COMM_WORLD,requests(2),ierr)
-       !call MPI_ISSEND(p(lo(1)-nh,lo(2)     ,lo(3)-nh),1,halo,nb(0),0, &
-       !                MPI_COMM_WORLD,requests(3),ierr)
-       !call MPI_ISSEND(p(lo(1)-nh,hi(2)-nh+1,lo(3)-nh),1,halo,nb(1),1, &
-       !                MPI_COMM_WORLD,requests(4),ierr)
-       !call MPI_WAITALL(4,requests,MPI_STATUSES_IGNORE,ierr)
+#else
+       call MPI_IRECV( p(lo(1)-nh,hi(2)+1   ,lo(3)-nh),1,halo,nb(1),0, &
+                      MPI_COMM_WORLD,requests(1),ierr)
+       call MPI_IRECV( p(lo(1)-nh,lo(2)-nh  ,lo(3)-nh),1,halo,nb(0),1, &
+                      MPI_COMM_WORLD,requests(2),ierr)
+       call MPI_ISEND(p(lo(1)-nh,lo(2)     ,lo(3)-nh),1,halo,nb(0),0, &
+                      MPI_COMM_WORLD,requests(3),ierr)
+       call MPI_ISEND(p(lo(1)-nh,hi(2)-nh+1,lo(3)-nh),1,halo,nb(1),1, &
+                      MPI_COMM_WORLD,requests(4),ierr)
+       call MPI_WAITALL(4,requests,MPI_STATUSES_IGNORE,ierr)
+#endif
      case(3) ! z direction
+#if !defined(_ASYNC_HALO)
        call MPI_SENDRECV(p(lo(1)-nh,lo(2)-nh,lo(3)     ),1,halo,nb(0),0, &
                          p(lo(1)-nh,lo(2)-nh,hi(3)+1   ),1,halo,nb(1),0, &
                          MPI_COMM_WORLD,MPI_STATUS_IGNORE,ierr)
        call MPI_SENDRECV(p(lo(1)-nh,lo(2)-nh,hi(3)-nh+1),1,halo,nb(1),0, &
                          p(lo(1)-nh,lo(2)-nh,lo(3)-nh  ),1,halo,nb(0),0, &
                          MPI_COMM_WORLD,MPI_STATUS_IGNORE,ierr)
-       !call MPI_IRECV( p(lo(1)-nh,lo(2)-nh,hi(3)+1   ),1,halo,nb(1),0, &
-       !                MPI_COMM_WORLD,requests(1),ierr)
-       !call MPI_IRECV( p(lo(1)-nh,lo(2)-nh,lo(3)-nh  ),1,halo,nb(0),1, &
-       !                MPI_COMM_WORLD,requests(2),ierr)
-       !call MPI_ISSEND(p(lo(1)-nh,lo(2)-nh,lo(3)     ),1,halo,nb(0),0, &
-       !                MPI_COMM_WORLD,requests(3),ierr)
-       !call MPI_ISSEND(p(lo(1)-nh,lo(2)-nh,hi(3)-nh+1),1,halo,nb(1),1, &
-       !                MPI_COMM_WORLD,requests(4),ierr)
-       !call MPI_WAITALL(4,requests,MPI_STATUSES_IGNORE,ierr)
+#else
+       call MPI_IRECV( p(lo(1)-nh,lo(2)-nh,hi(3)+1   ),1,halo,nb(1),0, &
+                      MPI_COMM_WORLD,requests(1),ierr)
+       call MPI_IRECV( p(lo(1)-nh,lo(2)-nh,lo(3)-nh  ),1,halo,nb(0),1, &
+                      MPI_COMM_WORLD,requests(2),ierr)
+       call MPI_ISEND(p(lo(1)-nh,lo(2)-nh,lo(3)     ),1,halo,nb(0),0, &
+                      MPI_COMM_WORLD,requests(3),ierr)
+       call MPI_ISEND(p(lo(1)-nh,lo(2)-nh,hi(3)-nh+1),1,halo,nb(1),1, &
+                      MPI_COMM_WORLD,requests(4),ierr)
+       call MPI_WAITALL(4,requests,MPI_STATUSES_IGNORE,ierr)
+#endif
      end select
     enddo
   end subroutine updthalo
@@ -557,32 +568,33 @@ module mod_bound
     !$acc end host_data
   end subroutine updthalo_gpu
   !
-  subroutine updthalo_gpu_scal(nh,periods,p)
-    use mod_types
-    use cudecomp
-    use mod_common_cudecomp, only: work => work_halo, &
-                                   ch => handle,gd => gd_halo_scal, &
-                                   dtype => cudecomp_real_rp, &
-                                   istream => istream_acc_queue_1
-    implicit none
-    integer , intent(in) :: nh
-    logical , intent(in) :: periods(3)
-    real(rp), intent(inout), dimension(1-nh:,1-nh:,1-nh:) :: p
-    integer :: istat
-    !$acc host_data use_device(p,work)
-    select case(ipencil_axis)
-    case(1)
-      istat = cudecompUpdateHalosX(ch,gd,p,work,dtype,[nh,nh,nh],periods,2,stream=istream)
-      istat = cudecompUpdateHalosX(ch,gd,p,work,dtype,[nh,nh,nh],periods,3,stream=istream)
-    case(2)
-      istat = cudecompUpdateHalosY(ch,gd,p,work,dtype,[nh,nh,nh],periods,1,stream=istream)
-      istat = cudecompUpdateHalosY(ch,gd,p,work,dtype,[nh,nh,nh],periods,3,stream=istream)
-    case(3)
-      istat = cudecompUpdateHalosZ(ch,gd,p,work,dtype,[nh,nh,nh],periods,1,stream=istream)
-      istat = cudecompUpdateHalosZ(ch,gd,p,work,dtype,[nh,nh,nh],periods,2,stream=istream)
-    end select
-    !$acc end host_data
-  end subroutine updthalo_gpu_scal
+ subroutine updthalo_gpu_scal(nh,periods,p)
+   use mod_types
+   use cudecomp
+   use mod_common_cudecomp, only: work => work_halo, &
+                                  ch => handle, &
+                                  gd => gd_halo_scal, &
+                                  dtype => cudecomp_real_rp, &
+                                  istream => istream_acc_queue_1
+   implicit none
+   integer , intent(in) :: nh
+   logical , intent(in) :: periods(3)
+   real(rp), intent(inout), dimension(1-nh:,1-nh:,1-nh:) :: p
+   integer :: istat
+   !$acc host_data use_device(p,work)
+   select case(ipencil_axis)
+   case(1)
+     istat = cudecompUpdateHalosX(ch,gd,p,work,dtype,[nh,nh,nh],periods,2,stream=istream)
+     istat = cudecompUpdateHalosX(ch,gd,p,work,dtype,[nh,nh,nh],periods,3,stream=istream)
+   case(2)
+     istat = cudecompUpdateHalosY(ch,gd,p,work,dtype,[nh,nh,nh],periods,1,stream=istream)
+     istat = cudecompUpdateHalosY(ch,gd,p,work,dtype,[nh,nh,nh],periods,3,stream=istream)
+   case(3)
+     istat = cudecompUpdateHalosZ(ch,gd,p,work,dtype,[nh,nh,nh],periods,1,stream=istream)
+     istat = cudecompUpdateHalosZ(ch,gd,p,work,dtype,[nh,nh,nh],periods,2,stream=istream)
+   end select
+   !$acc end host_data
+ end subroutine updthalo_gpu_scal
 #endif
   
 end module mod_bound

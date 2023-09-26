@@ -11,7 +11,7 @@ module mod_output
   use mod_types
   implicit none
   private
-  public out0d,out1d,out1d_chan,out1d_chan_tmp,out2d,out3d,write_log_output,write_visu_2d,write_visu_3d
+  public out0d,gen_alias,out1d,out1d_chan,out1d_chan_tmp,out2d,out3d,write_log_output,write_visu_2d,write_visu_3d
   contains
   subroutine out0d(fname,n,var)
     !
@@ -34,6 +34,17 @@ module mod_output
     end if
   end subroutine out0d
   !
+  subroutine gen_alias(myid,datadir,fname,fname_alias)
+    !
+    ! this subroutine generates a symlink with name `fname_alias`, pointing to
+    ! file `datadir//fname` using the `execute_command_line` intrinsic;
+    ! it is called by task `myid`
+    !
+    integer, intent(in) :: myid
+    character(len=*), intent(in) :: datadir,fname,fname_alias
+    if(myid == 0) call execute_command_line('ln -sf '//trim(fname)//' '//trim(datadir)//fname_alias)
+  end subroutine gen_alias
+  !
   subroutine out1d(fname,ng,lo,hi,idir,l,dl,z_g,dz,p)
     !
     ! writes the profile of a variable averaged
@@ -53,7 +64,8 @@ module mod_output
     integer , intent(in), dimension(3) :: ng,lo,hi
     integer , intent(in) :: idir
     real(rp), intent(in), dimension(3) :: l,dl
-    real(rp), intent(in), dimension(0:) :: z_g,dz
+    real(rp), intent(in), dimension(0:       ) :: z_g
+    real(rp), intent(in), dimension(0:lo(3)-1) :: dz
     real(rp), intent(in), dimension(lo(1)-1:,lo(2)-1:,lo(3)-1:) :: p
     real(rp), allocatable, dimension(:) :: p1d
     integer :: i,j,k
@@ -135,7 +147,7 @@ module mod_output
     end select
   end subroutine out1d
   !
-  subroutine out2d(fname,inorm,islice,p)
+  subroutine out2d(fname,fname_fld,varname,lo,hi,inorm,islice,p)
     use mod_common_mpi, only: ipencil => ipencil_axis
     !
     ! saves a planar slice of a scalar field into a binary file
@@ -148,13 +160,31 @@ module mod_output
     ! p      -> 3D input scalar field
     !
     implicit none
-    character(len=*), intent(in) :: fname
+    character(len=*), intent(in) :: fname,fname_fld,varname
+    integer, dimension(3) :: lo,hi
     integer , intent(in) :: inorm,islice
     real(rp), intent(in), dimension(:,:,:) :: p
     !
     ! masked in case of _SINGLE_PRECISION_POISSON since 2DECOMP does not yet support two precisions
     !
-#if !defined(_SINGLE_PRECISION_POISSON)
+#if defined(_USE_HDF5)
+    block
+      use decomp_2d
+      use mod_load!, only: io_field_hdf5
+      integer, dimension(3) :: ng
+      !
+      select case(inorm)
+      case(1)
+       ng(:) = [islice,ny_global,nz_global]
+      case(2)
+       ng(:) = [nx_global,islice,nz_global]
+      case(3)
+       ng(:) = [nx_global,ny_global,islice]
+      end select
+      !
+      call io_field_hdf5('w',fname,varname,ng,[1,1,1],lo,hi,p)
+    end block
+#else
     select case(inorm)
     case(1) !normal to x --> yz plane
        call decomp_2d_write_plane(ipencil,p,inorm,islice,'.',fname,'dummy')
@@ -166,7 +196,7 @@ module mod_output
 #endif
   end subroutine out2d
   !
-  subroutine out3d(fname,nskip,p)
+  subroutine out3d(fname,fname_fld,varname,nskip,p)
     use mod_common_mpi, only: ipencil => ipencil_axis
     !
     ! saves a 3D scalar field into a binary file
@@ -178,7 +208,7 @@ module mod_output
     ! p      -> 3D input scalar field
     !
     implicit none
-    character(len=*), intent(in) :: fname
+    character(len=*), intent(in) :: fname,fname_fld,varname
     integer , intent(in), dimension(3) :: nskip
     real(rp), intent(in), dimension(:,:,:) :: p
     integer :: fh
@@ -186,20 +216,20 @@ module mod_output
     !
     ! masked in case of _SINGLE_PRECISION_POISSON since 2DECOMP does not yet support two precisions
     !
-    call MPI_FILE_OPEN(MPI_COMM_WORLD, fname, &
+    call MPI_FILE_OPEN(MPI_COMM_WORLD, fname_fld, &
          MPI_MODE_CREATE+MPI_MODE_WRONLY, MPI_INFO_NULL,fh, ierr)
     filesize = 0_MPI_OFFSET_KIND
     call MPI_FILE_SET_SIZE(fh,filesize,ierr)
     disp = 0_MPI_OFFSET_KIND
-#if !defined(_SINGLE_PRECISION_POISSON)
-    call decomp_2d_write_every(ipencil,p,nskip(1),nskip(2),nskip(3),fname,.true.)
+#if !defined(_OPENACC)
+    call decomp_2d_write_every(ipencil,p,nskip(1),nskip(2),nskip(3),fname_fld,.true.)
 #else
     !
     ! temporary workaround due to 2DECOMP's lack of support for different real kinds in a single build
     !
     block
       use decomp_2d
-      use mod_load, only: io_field
+      use mod_load, only: io_field!, io_field_hdf5
       integer, dimension(3) :: ng,lo,hi
       ng(:) = [nx_global,ny_global,nz_global]
       select case(ipencil)
@@ -215,7 +245,11 @@ module mod_output
       end select
       if(any(nskip /= 1) .and. myid == 0) &
         print*, 'Warning: `nskip` should be `[1,1,1]` if `io_field()` is used to output 3D field data'
+#if defined(_USE_HDF5)
+      call io_field_hdf5('w',fname,varname,ng,[1,1,1],lo,hi,p)
+#else
       call io_field('w',fh,ng,[0,0,0],lo,hi,disp,p)
+#endif
     end block
 #endif
     call MPI_FILE_CLOSE(fh,ierr)
@@ -251,27 +285,27 @@ module mod_output
     end if
   end subroutine write_log_output
   !
-  subroutine write_visu_3d(datadir,fname_bin,fname_log,varname,nmin,nmax,nskip,time,istep,p)
+  subroutine write_visu_3d(datadir,fname,fname_bin,fname_log,varname,nmin,nmax,nskip,time,istep,p)
     !
     ! wraps the calls of out3d and write_log_output into the same subroutine
     !
     implicit none
-    character(len=*), intent(in)          :: datadir,fname_bin,fname_log,varname
+    character(len=*), intent(in)          :: datadir,fname,fname_bin,fname_log,varname
     integer , intent(in), dimension(3)    :: nmin,nmax,nskip
     real(rp), intent(in)                  :: time
     integer , intent(in)                  :: istep
     real(rp), intent(in), dimension(:,:,:) :: p
     !
-    call out3d(trim(datadir)//trim(fname_bin),nskip,p)
+    call out3d(trim(datadir)//trim(fname),trim(datadir)//trim(fname_bin),trim(varname),nskip,p)
     call write_log_output(trim(datadir)//trim(fname_log),trim(fname_bin),trim(varname),nmin,nmax,nskip,time,istep)
   end subroutine write_visu_3d
   !
-  subroutine write_visu_2d(datadir,fname_bin,fname_log,varname,inorm,nslice,ng,time,istep,p)
+  subroutine write_visu_2d(datadir,fname,fname_bin,fname_log,varname,inorm,nslice,ng,time,istep,p)
     !
     ! wraps the calls of out2d and write-log_output into the same subroutine
     !
     implicit none
-    character(len=*), intent(in)          :: datadir,fname_bin,fname_log,varname
+    character(len=*), intent(in)          :: datadir,fname,fname_bin,fname_log,varname
     integer , intent(in)                  :: inorm,nslice
     integer , intent(in), dimension(3)    :: ng
     real(rp), intent(in)                  :: time
@@ -279,7 +313,6 @@ module mod_output
     real(rp), intent(in), dimension(:,:,:) :: p
     integer , dimension(3) :: nmin_2d,nmax_2d
     !
-    call out2d(trim(datadir)//trim(fname_bin),inorm,nslice,p)
     select case(inorm)
     case(1)
       nmin_2d(:) = [nslice,1    ,1    ]
@@ -291,6 +324,8 @@ module mod_output
       nmin_2d(:) = [1    ,1    ,nslice]
       nmax_2d(:) = [ng(1),ng(2),nslice]
     end select
+    !
+    call out2d(trim(datadir)//trim(fname),trim(datadir)//trim(fname_bin),trim(varname),nmin_2d,nmax_2d,inorm,nslice,p)
     call write_log_output(trim(datadir)//trim(fname_log),trim(fname_bin),trim(varname),nmin_2d,nmax_2d,[1,1,1],time,istep)
   end subroutine write_visu_2d
   !
@@ -313,26 +348,28 @@ module mod_output
     case(3)
       grid_area_ratio = dl(1)*dl(2)/(l(1)*l(2))
       allocate(um(0:q+1),vm(0:q+1),wm(0:q+1),pm(0:q+1),u2(0:q+1),v2(0:q+1),w2(0:q+1),p2(0:q+1),uw(0:q+1))
-      um(:) = 0.
-      vm(:) = 0.
-      wm(:) = 0.
-      u2(:) = 0.
-      v2(:) = 0.
-      w2(:) = 0.
-      uw(:) = 0.
+      um(:) = 0.0_rp
+      vm(:) = 0.0_rp
+      wm(:) = 0.0_rp
+      pm(:) = 0.0_rp
+      u2(:) = 0.0_rp
+      v2(:) = 0.0_rp
+      w2(:) = 0.0_rp
+      p2(:) = 0.0_rp
+      uw(:) = 0.0_rp
       do k=lo(3),hi(3)
         do j=lo(2),hi(2)
           do i=lo(1),hi(1)
             um(k) = um(k) + u(i,j,k)
             vm(k) = vm(k) + v(i,j,k)
-            wm(k) = wm(k) + 0.50*(w(i,j,k-1) + w(i,j,k))
+            wm(k) = wm(k) + 0.5_rp*(w(i,j,k-1) + w(i,j,k))
             pm(k) = pm(k) + p(i,j,k)
             u2(k) = u2(k) + u(i,j,k)**2
             v2(k) = v2(k) + v(i,j,k)**2
-            w2(k) = w2(k) + 0.50*(w(i,j,k)**2+w(i,j,k-1)**2)
+            w2(k) = w2(k) + 0.5_rp*(w(i,j,k)**2+w(i,j,k-1)**2)
             p2(k) = p2(k) + p(i,j,k)**2
-            uw(k) = uw(k) + 0.25*(u(i-1,j,k) + u(i,j,k))* &
-                                 (w(i,j,k-1) + w(i,j,k))
+            uw(k) = uw(k) + 0.25_rp*(u(i-1,j,k) + u(i,j,k))* &
+                                    (w(i,j,k-1) + w(i,j,k))
           end do
         end do
       end do
@@ -349,10 +386,10 @@ module mod_output
       vm(:) = vm(:)*grid_area_ratio
       wm(:) = wm(:)*grid_area_ratio
       pm(:) = pm(:)*grid_area_ratio
-      u2(:) = sqrt(u2(:)*grid_area_ratio - um(:)**2)
-      v2(:) = sqrt(v2(:)*grid_area_ratio - vm(:)**2)
-      w2(:) = sqrt(w2(:)*grid_area_ratio - wm(:)**2)
-      p2(:) = sqrt(p2(:)*grid_area_ratio - pm(:)**2)
+      u2(:) = u2(:)*grid_area_ratio - um(:)**2
+      v2(:) = v2(:)*grid_area_ratio - vm(:)**2
+      w2(:) = w2(:)*grid_area_ratio - wm(:)**2
+      p2(:) = p2(:)*grid_area_ratio - pm(:)**2
       uw(:) = uw(:)*grid_area_ratio - um(:)*wm(:)
       if(myid == 0) then
         open(newunit=iunit,file=fname)
@@ -367,6 +404,71 @@ module mod_output
     case(1)
     end select
   end subroutine out1d_chan
+  !
+  subroutine out1d_chan_tmp(fname,ng,lo,hi,idir,l,dl,z_g,u,v,w,s)
+    implicit none
+    character(len=*), intent(in) :: fname
+    integer , intent(in), dimension(3)  :: ng,lo,hi
+    integer , intent(in) :: idir
+    real(rp), intent(in), dimension(3) :: l,dl
+    real(rp), intent(in), dimension(0:) :: z_g
+    real(rp), intent(in), dimension(lo(1)-1:,lo(2)-1:,lo(3)-1:) :: u,v,w,s
+    real(rp), allocatable, dimension(:) :: um,vm,wm,sm,s2,us,vs,ws
+    integer :: i,j,k
+    integer :: iunit
+    integer :: q
+    real(rp) :: grid_area_ratio
+    !
+    q = ng(idir)
+    grid_area_ratio = dl(1)*dl(2)/(l(1)*l(2))
+    allocate(um(0:q+1),vm(0:q+1),wm(0:q+1),sm(0:q+1),s2(0:q+1),us(0:q+1),vs(0:q+1),ws(0:q+1))
+    um(k) = 0.0_rp
+    vm(k) = 0.0_rp
+    wm(k) = 0.0_rp
+    sm(k) = 0.0_rp
+    s2(k) = 0.0_rp
+    us(k) = 0.0_rp
+    vs(k) = 0.0_rp
+    ws(k) = 0.0_rp
+    do k=lo(3),hi(3)
+      do j=lo(2),hi(2)
+        do i=lo(1),hi(1)
+          sm(k) = sm(k) + s(i,j,k)
+          s2(k) = s2(k) + s(i,j,k)**2
+          um(k) = um(k) + u(i,j,k)
+          vm(k) = vm(k) + v(i,j,k)
+          wm(k) = wm(k) + 0.5_rp*(w(i,j,k-1) + w(i,j,k))
+          us(k) = us(k) + 0.5_rp*(u(i-1,j,k) + u(i,j,k))*s(i,j,k)
+          vs(k) = vs(k) + 0.5_rp*(v(i,j-1,k) + v(i,j,k))*s(i,j,k)
+          ws(k) = ws(k) + 0.5_rp*(w(i,j,k-1) + w(i,j,k))*s(i,j,k)
+        enddo
+      enddo
+    enddo
+    call MPI_ALLREDUCE(MPI_IN_PLACE,sm(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_ALLREDUCE(MPI_IN_PLACE,um(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_ALLREDUCE(MPI_IN_PLACE,vm(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_ALLREDUCE(MPI_IN_PLACE,wm(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_ALLREDUCE(MPI_IN_PLACE,s2(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_ALLREDUCE(MPI_IN_PLACE,us(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_ALLREDUCE(MPI_IN_PLACE,vs(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_ALLREDUCE(MPI_IN_PLACE,ws(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    um(:) = um(:)*grid_area_ratio
+    vm(:) = vm(:)*grid_area_ratio
+    wm(:) = wm(:)*grid_area_ratio
+    sm(:) = sm(:)*grid_area_ratio  
+    s2(:) = s2(:)*grid_area_ratio - sm(:)**2
+    us(:) = us(:)*grid_area_ratio - um(:)*sm(:)
+    vs(:) = vs(:)*grid_area_ratio - vm(:)*sm(:)
+    ws(:) = ws(:)*grid_area_ratio - wm(:)*sm(:)
+    if(myid == 0) then
+       open(newunit=iunit,file=fname)
+       do k=1,ng(3)
+         write(iunit,'(6E16.7e3)') z_g(k),sm(k),s2(k), &
+                                          us(k),vs(k),ws(k)
+       enddo
+      close(iunit)
+    endif
+  end subroutine out1d_chan_tmp
   !
   subroutine out2d_duct(fname,ng,lo,hi,idir,l,dl,z_g,u,v,w) ! e.g. for a duct
     !
@@ -391,26 +493,26 @@ module mod_output
       q = ng(3)
       allocate(um(p,q),vm(p,q),wm(p,q),u2(p,q),v2(p,q),w2(p,q),uv(p,q),vw(p,q))
       !
-      um(:,:) = 0.
-      vm(:,:) = 0.
-      wm(:,:) = 0.
-      u2(:,:) = 0.
-      v2(:,:) = 0.
-      w2(:,:) = 0.
-      uv(:,:) = 0.
-      vw(:,:) = 0.
+      um(:,:) = 0.0_rp
+      vm(:,:) = 0.0_rp
+      wm(:,:) = 0.0_rp
+      u2(:,:) = 0.0_rp
+      v2(:,:) = 0.0_rp
+      w2(:,:) = 0.0_rp
+      uv(:,:) = 0.0_rp
+      vw(:,:) = 0.0_rp
       do k=lo(3),hi(3)
         do i=lo(1),hi(1)
           do j=lo(2),hi(2)
-            um(i,k) = um(i,k) + 0.50*(u(i-1,j,k)+u(i,j,k))
+            um(i,k) = um(i,k) + 0.5_rp*(u(i-1,j,k)+u(i,j,k))
             vm(i,k) = vm(i,k) + v(i,j,k)
-            wm(i,k) = wm(i,k) + 0.50*(w(i,j,k-1)+w(i,j,k))
-            u2(i,k) = u2(i,k) + 0.50*(u(i-1,j,k)**2+u(i,j,k)**2)
+            wm(i,k) = wm(i,k) + 0.5_rp*(w(i,j,k-1)+w(i,j,k))
+            u2(i,k) = u2(i,k) + 0.5_rp*(u(i-1,j,k)**2+u(i,j,k)**2)
             v2(i,k) = v2(i,k) + v(i,j,k)**2
-            w2(i,k) = w2(i,k) + 0.50*(w(i,j,k-1)**2+w(i,j,k)**2)
-            vw(i,k) = vw(i,k) + 0.25*(v(i,j-1,k) + v(i,j,k))* &
+            w2(i,k) = w2(i,k) + 0.5_rp*(w(i,j,k-1)**2+w(i,j,k)**2)
+            vw(i,k) = vw(i,k) + 0.25_rp*(v(i,j-1,k) + v(i,j,k))* &
                                      (w(i,j,k-1) + w(i,j,k))
-            uv(i,k) = uv(i,k) + 0.25*(u(i-1,j,k) + u(i,j,k))* &
+            uv(i,k) = uv(i,k) + 0.25_rp*(u(i-1,j,k) + u(i,j,k))* &
                                      (v(i,j-1,k) + v(i,j,k))
           end do
         end do
@@ -426,9 +528,9 @@ module mod_output
       um(:,:) =      um(:,:)*grid_area_ratio
       vm(:,:) =      vm(:,:)*grid_area_ratio
       wm(:,:) =      wm(:,:)*grid_area_ratio
-      u2(:,:) = sqrt(u2(:,:)*grid_area_ratio - um(:,:)**2)
-      v2(:,:) = sqrt(v2(:,:)*grid_area_ratio - vm(:,:)**2)
-      w2(:,:) = sqrt(w2(:,:)*grid_area_ratio - wm(:,:)**2)
+      u2(:,:) =      u2(:,:)*grid_area_ratio - um(:,:)**2
+      v2(:,:) =      v2(:,:)*grid_area_ratio - vm(:,:)**2
+      w2(:,:) =      w2(:,:)*grid_area_ratio - wm(:,:)**2
       vw(:,:) =      vw(:,:)*grid_area_ratio - vm(:,:)*wm(:,:)
       uv(:,:) =      uv(:,:)*grid_area_ratio - um(:,:)*vm(:,:)
       if(myid == 0) then
@@ -449,26 +551,26 @@ module mod_output
       q = ng(3)
       allocate(um(p,q),vm(p,q),wm(p,q),u2(p,q),v2(p,q),w2(p,q),uv(p,q),uw(p,q))
       !
-      um(:,:) = 0.
-      vm(:,:) = 0.
-      wm(:,:) = 0.
-      u2(:,:) = 0.
-      v2(:,:) = 0.
-      w2(:,:) = 0.
-      uv(:,:) = 0.
-      uw(:,:) = 0.
+      um(:,:) = 0.0_rp
+      vm(:,:) = 0.0_rp
+      wm(:,:) = 0.0_rp
+      u2(:,:) = 0.0_rp
+      v2(:,:) = 0.0_rp
+      w2(:,:) = 0.0_rp
+      uv(:,:) = 0.0_rp
+      uw(:,:) = 0.0_rp
       do k=lo(3),hi(3)
         do j=lo(2),hi(2)
           do i=lo(1),hi(1)
             um(j,k) = um(j,k) + u(i,j,k)
-            vm(j,k) = vm(j,k) + 0.50*(v(i,j-1,k)+v(i,j,k))
-            wm(j,k) = wm(j,k) + 0.50*(w(i,j,k-1)+w(i,j,k))
+            vm(j,k) = vm(j,k) + 0.5_rp*(v(i,j-1,k)+v(i,j,k))
+            wm(j,k) = wm(j,k) + 0.5_rp*(w(i,j,k-1)+w(i,j,k))
             u2(j,k) = u2(j,k) + u(i,j,k)**2
-            v2(j,k) = v2(j,k) + 0.50*(v(i,j-1,k)**2+v(i,j,k)**2)
-            w2(j,k) = w2(j,k) + 0.50*(w(i,j,k-1)**2+w(i,j,k)**2)
-            uv(j,k) = uv(j,k) + 0.25*(u(i-1,j,k) + u(i,j,k))* &
+            v2(j,k) = v2(j,k) + 0.5_rp*(v(i,j-1,k)**2+v(i,j,k)**2)
+            w2(j,k) = w2(j,k) + 0.5_rp*(w(i,j,k-1)**2+w(i,j,k)**2)
+            uv(j,k) = uv(j,k) + 0.25_rp*(u(i-1,j,k) + u(i,j,k))* &
                                      (v(i,j-1,k) + v(i,j,k))
-            uw(j,k) = uw(j,k) + 0.25*(u(i-1,j,k) + u(i,j,k))* &
+            uw(j,k) = uw(j,k) + 0.25_rp*(u(i-1,j,k) + u(i,j,k))* &
                                      (w(i,j,k-1) + w(i,j,k))
           end do
         end do
@@ -484,9 +586,9 @@ module mod_output
       um(:,:) =      um(:,:)*grid_area_ratio
       vm(:,:) =      vm(:,:)*grid_area_ratio
       wm(:,:) =      wm(:,:)*grid_area_ratio
-      u2(:,:) = sqrt(u2(:,:)*grid_area_ratio - um(:,:)**2)
-      v2(:,:) = sqrt(v2(:,:)*grid_area_ratio - vm(:,:)**2)
-      w2(:,:) = sqrt(w2(:,:)*grid_area_ratio - wm(:,:)**2)
+      u2(:,:) = u2(:,:)*grid_area_ratio - um(:,:)**2
+      v2(:,:) = v2(:,:)*grid_area_ratio - vm(:,:)**2
+      w2(:,:) = w2(:,:)*grid_area_ratio - wm(:,:)**2
       uv(:,:) =      uv(:,:)*grid_area_ratio - um(:,:)*vm(:,:)
       uw(:,:) =      uw(:,:)*grid_area_ratio - um(:,:)*wm(:,:)
       if(myid == 0) then
@@ -503,69 +605,5 @@ module mod_output
       end if
     end select
   end subroutine out2d_duct
-
-  subroutine out1d_chan_tmp(fname,ng,lo,hi,idir,l,dl,z_g,u,v,w,s)
-    implicit none
-    character(len=*), intent(in) :: fname
-    integer , intent(in), dimension(3)  :: ng,lo,hi
-    integer , intent(in) :: idir
-    real(rp), intent(in), dimension(3) :: l,dl
-    real(rp), intent(in), dimension(0:) :: z_g
-    real(rp), intent(in), dimension(lo(1)-1:,lo(2)-1:,lo(3)-1:) :: u,v,w,s
-    real(rp), allocatable, dimension(:) :: um,vm,wm,sm,s2,us,vs,ws
-    integer :: i,j,k
-    integer :: iunit
-    integer :: q
-    real(rp) :: grid_area_ratio
-    !
-    q = ng(idir)
-    grid_area_ratio = dl(1)*dl(2)/(l(1)*l(2))
-    allocate(um(0:q+1),vm(0:q+1),wm(0:q+1),sm(0:q+1),s2(0:q+1),us(0:q+1),vs(0:q+1),ws(0:q+1))
-    um(k) = 0.
-    vm(k) = 0.
-    wm(k) = 0.
-    sm(k) = 0.
-    s2(k) = 0.
-    us(k) = 0.
-    vs(k) = 0.
-    ws(k) = 0.
-    do k=lo(3),hi(3)
-      do j=lo(2),hi(2)
-        do i=lo(1),hi(1)
-          sm(k) = sm(k) + s(i,j,k)
-          s2(k) = s2(k) + s(i,j,k)**2
-          um(k) = um(k) + 0.50*(u(i-1,j,k)+u(i,j,k))
-          vm(k) = vm(k) + 0.50*(v(i-1,j,k)+v(i,j,k))
-          wm(k) = wm(k) + 0.50*(w(i,j,k-1) + w(i,j,k))
-          us(k) = us(k) + 0.50*(u(i,j,k)+u(i-1,j,k))*s(i,j,k)
-          vs(k) = vs(k) + 0.50*(v(i,j,k)+v(i,j-1,k))*s(i,j,k)
-          ws(k) = ws(k) + 0.50*(w(i,j,k)+w(i,j,k-1))*s(i,j,k)
-        enddo
-      enddo
-    enddo
-    call MPI_ALLREDUCE(MPI_IN_PLACE,sm(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    call MPI_ALLREDUCE(MPI_IN_PLACE,um(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    call MPI_ALLREDUCE(MPI_IN_PLACE,vm(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    call MPI_ALLREDUCE(MPI_IN_PLACE,wm(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    call MPI_ALLREDUCE(MPI_IN_PLACE,s2(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    call MPI_ALLREDUCE(MPI_IN_PLACE,us(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    call MPI_ALLREDUCE(MPI_IN_PLACE,vs(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    call MPI_ALLREDUCE(MPI_IN_PLACE,ws(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    um(:) = um(:)*grid_area_ratio
-    vm(:) = vm(:)*grid_area_ratio
-    wm(:) = wm(:)*grid_area_ratio
-    sm(:) = sm(:)*grid_area_ratio  
-    s2(:) = sqrt(s2(:)*grid_area_ratio - sm(:)**2)
-    us(:) = us(:)*grid_area_ratio - um(:)*sm(:)
-    vs(:) = vs(:)*grid_area_ratio - vm(:)*sm(:)
-    ws(:) = ws(:)*grid_area_ratio - wm(:)*sm(:)
-    if(myid.eq.0) then
-       open(newunit=iunit,file=fname)
-       do k=1,ng(3)
-         write(iunit,'(6E16.7e3)') z_g(k),sm(k),s2(k), &
-                                          us(k),vs(k),ws(k)
-       enddo
-      close(iunit)
-    endif
-  end subroutine out1d_chan_tmp
+!
 end module mod_output

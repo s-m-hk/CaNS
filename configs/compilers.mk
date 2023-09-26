@@ -3,7 +3,7 @@ ifeq ($(strip $(FCOMP)),GNU)
 FC = mpifort
 endif
 ifeq ($(strip $(FCOMP)),INTEL)
-FC = mpiifort
+FC = mpiifort #-fc=ifx
 CPP = -fpp
 endif
 ifeq ($(strip $(FCOMP)),NVIDIA)

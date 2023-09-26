@@ -2,14 +2,14 @@
 module mod_forcing
   use mpi
   use mod_types
-  use mod_common_mpi, only: myid,ierr
+  use mod_common_mpi, only: ierr
   implicit none
   private
   public force_vel,force_scal,force_bulk_vel,bulk_mean_ibm
   contains
-  subroutine force_vel(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,f)
+  subroutine force_vel(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fibm)
     !
-    ! Force velocity field using the volume-penalization IBM:
+    ! Force velocity field using volume-penalization IBM:
     ! the force is proportional to the volume fraction of
     ! solid in a grid cell i,j,k.
     ! The volume fraction is defined in the cell centers and
@@ -26,7 +26,7 @@ module mod_forcing
     real(rp), intent(in   ), dimension(0:) :: dzc,dzf
     real(rp), intent(in   ), dimension(0:,0:,0:) :: psi_u,psi_v,psi_w
     real(rp), intent(inout), dimension(0:,0:,0:) :: u,v,w
-    real(rp), intent(out  ), dimension(4) :: f
+    real(rp), intent(out  ), dimension(4) :: fibm
     real(rp) :: psix,psiy,psiz,fx,fy,fz,fxtot,fytot,fztot,dx,dy
     integer :: i,j,k,nx,ny,nz
     !
@@ -47,10 +47,6 @@ module mod_forcing
     do k=1,nz
       do j=1,ny
         do i=1,nx
-          !
-          ! note: these loops should be split into three for more efficient
-          !       memory access
-          !
           psix  = psi_u(i,j,k)
           psiy  = psi_v(i,j,k)
           psiz  = psi_w(i,j,k)
@@ -71,12 +67,12 @@ module mod_forcing
     call MPI_ALLREDUCE(MPI_IN_PLACE,fxtot,1,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
     call MPI_ALLREDUCE(MPI_IN_PLACE,fytot,1,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
     call MPI_ALLREDUCE(MPI_IN_PLACE,fztot,1,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    f(1) = fxtot/(l(1)*l(2)*l(3))
-    f(2) = fytot/(l(1)*l(2)*l(3))
-    f(3) = fztot/(l(1)*l(2)*l(3))
+    fibm(1) = fxtot/(l(1)*l(2)*l(3))
+    fibm(2) = fytot/(l(1)*l(2)*l(3))
+    fibm(3) = fztot/(l(1)*l(2)*l(3))
   end subroutine force_vel
   !
-  subroutine force_scal(n,nh_s,dl,dz,l,psi,s,f)
+  subroutine force_scal(n,nh_s,dl,dz,l,psi,s,fibm)
     !
     implicit none
     integer , intent(in), dimension(3) :: n
@@ -85,7 +81,7 @@ module mod_forcing
     real(rp), intent(in   ) , dimension(0:) :: dz
     real(rp), intent(in   ) , dimension(0:,0:,0:) :: psi
     real(rp), intent(inout) , dimension(1-nh_s:,1-nh_s:,1-nh_s:) :: s
-    real(rp), intent(inout  ), dimension(4) :: f
+    real(rp), intent(inout  ), dimension(4) :: fibm
     real(rp) :: psis,fs,fstot,dx,dy
     integer :: i,j,k,nx,ny,nz
     !
@@ -94,7 +90,9 @@ module mod_forcing
     nz = n(3)
     dx = dl(1)
     dy = dl(2)
-    !$acc parallel loop collapse(3) default(present) private(psis,fs,fstot) async(1)
+    fstot = 0._rp
+    !$acc data copy(fstot) async(1)
+    !$acc parallel loop collapse(3) default(present) private(psis,fs) reduction(+:fstot) async(1)
     !$OMP PARALLEL DO DEFAULT(none) &
     !$OMP SHARED(n,s,psi,dl,dzc,dzf) &
     !$OMP PRIVATE(i,j,k,fs,psis) &
@@ -109,11 +107,13 @@ module mod_forcing
         enddo
       enddo
     enddo
-    f(4) = fstot/(l(1)*l(2)*l(3))
-    ! call mpi_allreduce(MPI_IN_PLACE,f(4),3,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr) ! Not needed, called in the velocity routine
+    !$acc end data
+    !$acc wait(1)
+    call MPI_ALLREDUCE(MPI_IN_PLACE,fstot,1,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    fibm(4) = fstot/(l(1)*l(2)*l(3))
   end subroutine force_scal
   !
-  subroutine force_bulk_vel(n,nh,zc,zf,dl,dz,l,psi,p,velf,f)
+  subroutine force_bulk_vel(n,nh,dl,dz,l,psi,p,velf,f)
     !
     ! bulk velocity forcing only in a region of the domain
     ! where psi is non-zero
@@ -123,7 +123,6 @@ module mod_forcing
     integer , intent(in   ) :: nh
     real(rp), intent(in   ) , dimension(3) :: dl,l
     real(rp), intent(in   ) , dimension(0:) :: dz
-    real(rp), intent(in   ) , dimension(0:) :: zc,zf
     real(rp), intent(in   ), dimension(0:,0:,0:) :: psi
     real(rp), intent(inout), dimension(1-nh:,1-nh:,1-nh:) :: p
     real(rp), intent(in   ) :: velf
@@ -136,8 +135,8 @@ module mod_forcing
     nz = n(3)
     dx = dl(1)
     dy = dl(2)
-    mean_val = 0.
-    mean_psi = 0.
+    mean_val = 0._rp
+    mean_psi = 0._rp
     !
     !$acc data copy(mean_val,mean_psi) async(1)
     !$acc parallel loop collapse(3) default(present) private(psis) reduction(+:mean_val) reduction(+:mean_psi) async(1)
@@ -148,7 +147,7 @@ module mod_forcing
     do k=1,nz
       do j=1,ny
         do i=1,nx
-          psis = 1.-psi(i,j,k)
+          psis = 1.0_rp - psi(i,j,k)
           mean_val = mean_val + p(i,j,k)*psis*dx*dy*dz(k)
           mean_psi = mean_psi + psis*dx*dy*dz(k)
         enddo
@@ -168,9 +167,9 @@ module mod_forcing
       do j=1,ny
         do i=1,nx
 #if defined(_FORCE_FLUID_ONLY)
-          psis = 1.-psi(i,j,k) ! (if bulk velocity forced only inside the fluid)
+          psis = 1._rp-psi(i,j,k) ! (if bulk velocity forced only inside the fluid)
 #else
-          psis = 1.
+          psis = 1._rp
 #endif
           p(i,j,k) = p(i,j,k) + (velf-mean_val)*psis
           f = f + (velf-mean_val)*psis*dx*dy*dz(k)
@@ -186,11 +185,11 @@ module mod_forcing
 #endif
   end subroutine force_bulk_vel
   !
-  subroutine bulk_mean_ibm(n,dl,dz,l,psi,p,mean)
+  subroutine bulk_mean_ibm(n,dl,dz,psi,p,mean)
     !
     implicit none
     integer , intent(in   ), dimension(3) :: n
-    real(rp), intent(in   ) , dimension(3) :: dl,l ! l not used
+    real(rp), intent(in   ) , dimension(3) :: dl
     real(rp), intent(in   ) , dimension(0:) :: dz
     real(rp), intent(in   ), dimension(0:,0:,0:) :: psi
     real(rp), intent(inout), dimension(0:,0:,0:) :: p
@@ -204,8 +203,8 @@ module mod_forcing
     nz = n(3)
     dx = dl(1)
     dy = dl(2)
-    mean_val = 0.
-    mean_psi = 0.
+    mean_val = 0._rp
+    mean_psi = 0._rp
     !
     !$acc data copy(mean_val,mean_psi) async(1)
     !$acc parallel loop collapse(3) default(present) private(psis) reduction(+:mean_val) reduction(+:mean_psi) async(1)
@@ -216,7 +215,7 @@ module mod_forcing
     do k=1,nz
       do j=1,ny
         do i=1,nx
-          psis = 1.-psi(i,j,k)
+          psis = 1._rp-psi(i,j,k)
           mean_val = mean_val + p(i,j,k)*psis*dx*dy*dz(k)
           mean_psi = mean_psi + psis*dx*dy*dz(k)
         enddo

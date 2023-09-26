@@ -26,7 +26,7 @@ subroutine IBM_Mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,cell_phi_tag)
 implicit none
 integer ,intent(in), dimension(3) :: n,ng,lo,hi
 real(rp),intent(in), dimension(0:) :: zc,zf,zf_g,dzc,dzf
-real(rp),intent(out),dimension(0:,0:,0:) :: cell_phi_tag
+real(rp),intent(inout),dimension(0:,0:,0:) :: cell_phi_tag
 real(rp)::xxx,yyy,zzz,ratio
 integer i,j,k,nx,ny,nz
 logical :: ghost
@@ -34,7 +34,7 @@ nx = n(1)
 ny = n(2)
 nz = n(3)
 #if !defined(_DECOMP_Z)
-ratio = 1.
+ratio = 1.0_rp
 #else
 ratio = solid_height_ratio
 #endif
@@ -42,12 +42,26 @@ if(trim(surface_type) == 'Lattice') then
 do k=1,int(ratio*nz)
  do j=1,n(2)
   do i=1,n(1)
-     xxx = (i+lo(1)-1-.5)*dx
-     yyy = (j+lo(2)-1-.5)*dy
+     xxx = (i+lo(1)-1-0.5)*dx
+     yyy = (j+lo(2)-1-0.5)*dy
      zzz = zc(k)
      ghost = lattice(xxx,yyy,zzz,zf_g,dzc,lx,ly,lz)
      if (ghost) then
-       cell_phi_tag(i,j,k) = 1.
+       cell_phi_tag(i,j,k) = 1.0_rp
+     endif
+  enddo
+ enddo
+enddo
+elseif(trim(surface_type) == 'SolidWall') then
+do k=1,int(ratio*nz)
+ do j=1,n(2)
+  do i=1,n(1)
+     xxx = (i+lo(1)-1-0.5)*dx
+     yyy = (j+lo(2)-1-0.5)*dy
+     zzz = zc(k)
+     ghost = SolidWall(xxx,yyy,zzz,zf_g,dzc,lx,ly,lz)
+     if (ghost) then
+       cell_phi_tag(i,j,k) = 1.0_rp
      endif
   enddo
  enddo
@@ -65,11 +79,11 @@ logical ,intent(in), dimension(0:1,3) :: is_bound
 real(rp),intent(in), dimension(0:) :: zc,zf,zf_g,dzc,dzf
 real(rp),intent(in), dimension(1:,1:) :: surf_height
 #if defined(_IBM_BC)
-real(rp),intent(out),dimension(-5:,-5:,-5:) :: cell_phi_tag
-integer, intent(out),dimension(-5:,-5:,-5:) :: Level_set
+real(rp),intent(inout),dimension(-5:,-5:,-5:) :: cell_phi_tag
+integer, intent(inout),dimension(-5:,-5:,-5:) :: Level_set
 #else
-real(rp),intent(out),dimension(0:,0:,0:) :: cell_phi_tag
-integer, intent(out),dimension(0:,0:,0:) :: Level_set
+real(rp),intent(inout),dimension(0:,0:,0:) :: cell_phi_tag
+integer, intent(inout),dimension(0:,0:,0:) :: Level_set
 #endif
 #if !defined(_DECOMP_Z)
 real(rp), allocatable, dimension(:,:,:) :: var_u,var_v,var_w,var_phi
@@ -101,7 +115,7 @@ ny = n(2)
 nz = n(3)
 !
 #if !defined(_DECOMP_Z)
-ratio = 1.
+ratio = 1.0_rp
 #else
 ratio = solid_height_ratio
 #endif
@@ -122,23 +136,23 @@ if( (.not.is_bound(1,3)).and.(lo(3).lt.int(ng(3)/2)) ) then
 do k=1,int(ratio*nz) ! Lower wall
   do j=1,ny
     do i=1,nx
-      xxx = (i+lo(1)-1-.5)*dxl
-      yyy = (j+lo(2)-1-.5)*dyl
+      xxx = (i+lo(1)-1-0.5)*dxl
+      yyy = (j+lo(2)-1-0.5)*dyl
       zzz = zc(k)
 	  if(s1 == 1) ghost = height_map_ghost(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
 	  if(s2 == 1) ghost = wavywall_ghost(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
       if (ghost) then
-          cell_phi_tag(i,j,k) = 1.
+          cell_phi_tag(i,j,k) = 1.0_rp
           Level_set(i,j,k)    = 1
       endif
 
 ! Cell Center
       inside = .false.
-      cell_start_x = (i+lo(1)-1-1.)*dxl
-      cell_end_x   = (i+lo(1)-1-.0)*dxl
+      cell_start_x = (i+lo(1)-1-1.0)*dxl
+      cell_end_x   = (i+lo(1)-1-0.0)*dxl
 
-      cell_start_y = (j+lo(2)-1-1.)*dyl
-      cell_end_y   = (j+lo(2)-1-.0)*dyl
+      cell_start_y = (j+lo(2)-1-1.0)*dyl
+      cell_end_y   = (j+lo(2)-1-0.0)*dyl
 
       cell_start_z = zf(k-1)
       cell_end_z   = zf(k)
@@ -159,11 +173,11 @@ do k=1,int(ratio*nz) ! Lower wall
                xxx = cell_start_x + (l-1 )*dxx
 	           if(s1 == 1) inside = height_map(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
 	           if(s2 == 1) inside = wavywall(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
-               if (inside) counter = counter +1
+               if (inside) counter = counter + 1
             enddo
         enddo
       enddo
-     cell_phi_tag(i,j,k) = counter/(1.*number_of_divisions**3) !Solid volume fraction
+     cell_phi_tag(i,j,k) = counter/(1.0_rp*number_of_divisions**3) !Solid volume fraction
 
     enddo
   enddo
@@ -177,23 +191,23 @@ if( (.not.is_bound(0,3)).and.(lo(3).gt.int(ng(3)/2)) ) then
 do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
   do j=1,ny
     do i=1,nx
-      xxx = (i+lo(1)-1-.5)*dxl
-      yyy = (j+lo(2)-1-.5)*dyl
+      xxx = (i+lo(1)-1-0.5)*dxl
+      yyy = (j+lo(2)-1-0.5)*dyl
       zzz = length_z - zc(k)
 	  if(s1 == 1) ghost = height_map_ghost(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
 	  if(s2 == 1) ghost = wavywall_ghost(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
       if (ghost) then
-        cell_phi_tag(i,j,k) = 1.
+        cell_phi_tag(i,j,k) = 1.0_rp
         Level_set(i,j,k)    = 1
       endif
 
 ! Cell Center
       inside = .false.
-      cell_start_x = (i+lo(1)-1-1.)*dxl
-      cell_end_x   = (i+lo(1)-1-.0)*dxl
+      cell_start_x = (i+lo(1)-1-1.0)*dxl
+      cell_end_x   = (i+lo(1)-1-0.0)*dxl
 
-      cell_start_y = (j+lo(2)-1-1.)*dyl
-      cell_end_y   = (j+lo(2)-1-.0)*dyl
+      cell_start_y = (j+lo(2)-1-1.0)*dyl
+      cell_end_y   = (j+lo(2)-1-0.0)*dyl
 
       cell_start_z = length_z - zf(k-1)
       cell_end_z   = length_z - zf(k)
@@ -214,11 +228,11 @@ do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
                xxx = cell_start_x + (l-1 )*dxx
 	           if(s1 == 1) inside = height_map(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
 	           if(s2 == 1) inside = wavywall(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
-               if (inside) counter = counter +1
+               if (inside) counter = counter + 1
             enddo
         enddo
       enddo
-     cell_phi_tag(i,j,k) = counter/(1.*number_of_divisions**3) !Solid volume fraction
+     cell_phi_tag(i,j,k) = counter/(1.0_rp*number_of_divisions**3) !Solid volume fraction
 
     enddo
   enddo
@@ -244,7 +258,7 @@ do k=1,int(ratio*nz) ! Lower wall
           ghost = sphere_ghost(xxx,yyy,zzz,i,j,k,dzc(k))
       endif
       if (ghost) then
-          cell_phi_tag(i,j,k) = 1.
+          cell_phi_tag(i,j,k) = 1._rp
           Level_set(i,j,k)    = 1
       endif
 
@@ -282,7 +296,7 @@ do k=1,int(ratio*nz) ! Lower wall
             enddo
         enddo
       enddo
-     cell_phi_tag(i,j,k) = counter/(1.*number_of_divisions**3) !Solid volume fraction
+     cell_phi_tag(i,j,k) = counter/(1.0_rp*number_of_divisions**3) !Solid volume fraction
 
     enddo
   enddo
@@ -305,17 +319,17 @@ do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
           ghost = sphere_ghost(xxx,yyy,zzz,i,j,k,dzc(k))
       endif
       if (ghost) then
-          cell_phi_tag(i,j,k) = 1.
+          cell_phi_tag(i,j,k) = 1.0_rp
           Level_set(i,j,k)    = 1
       endif
 
 ! Cell Center
       inside = .false.
-      cell_start_x = (i+lo(1)-1-1.)*dxl
-      cell_end_x   = (i+lo(1)-1-.0)*dxl
+      cell_start_x = (i+lo(1)-1-1.0)*dxl
+      cell_end_x   = (i+lo(1)-1-0.0)*dxl
 
-      cell_start_y = (j+lo(2)-1-1.)*dyl
-      cell_end_y   = (j+lo(2)-1-.0)*dyl
+      cell_start_y = (j+lo(2)-1-1.0)*dyl
+      cell_end_y   = (j+lo(2)-1-0.0)*dyl
 
       cell_start_z = length_z - zf(k-1)
       cell_end_z   = length_z - zf(k)
@@ -339,11 +353,11 @@ do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
               elseif(trim(surface_type) == 'Sphere') then
                   inside = sphere(xxx,yyy,zzz,i,j,dzc(k),lo,hi)
               endif
-              if (inside) counter = counter +1
+              if (inside) counter = counter + 1
             enddo
         enddo
       enddo
-     cell_phi_tag(i,j,k) = counter/(1.*number_of_divisions**3) !Solid volume fraction
+     cell_phi_tag(i,j,k) = counter/(1.0_rp*number_of_divisions**3) !Solid volume fraction
 
     enddo
   enddo
@@ -391,10 +405,11 @@ function lattice(xIn, yIn, zIn, zf_g, dz, lengthx, lengthy, lengthz)
 	    z_offset = zIn
        endif
 	   
-	  if (z_offset.le.(d+(N_z*sz))) then
+	  if (z_offset.le.depth) then
 	   
 	  !Streamwise
-	   x0 = 0.; x1 = d; y0 = 0.; y1 = d
+	   x0 = 0.; x1 = d
+       y0 = 0.; y1 = d
 	   do i = 0,N_x
 	    if ((xIn.gt.x0) .and. (xIn.lt.x1)) then
 	     do j = 0,N_y
@@ -409,7 +424,8 @@ function lattice(xIn, yIn, zIn, zf_g, dz, lengthx, lengthy, lengthz)
 		x1 = x1 + sx
 	   enddo
 	   
-	   x0 = 0.; x1 = d; z0 = 0.; z1 = INT(d/dz(1))*dz(1)
+	   x0 = 0.; x1 = d
+       z0 = sz-d; z1 = sz !INT(d/dz(1))*dz(1)
 	   do i = 0,N_x
 	    if ((xIn.gt.x0) .and. (xIn.lt.x1)) then
 	     do k = 0,N_z
@@ -425,7 +441,8 @@ function lattice(xIn, yIn, zIn, zf_g, dz, lengthx, lengthy, lengthz)
 	   enddo
 	   
 	  !Spanwise
-	   y0 = 0.; y1 = d; z0 = 0.; z1 = INT(d/dz(1))*dz(1)
+	   y0 = 0.; y1 = d
+       z0 = sz-d; z1 = sz !INT(d/dz(1))*dz(1)
 	   do j = 0,N_y
 	    if ((yIn.gt.y0) .and. (yIn.lt.y1)) then
 	     do k = 0,N_z
@@ -440,7 +457,8 @@ function lattice(xIn, yIn, zIn, zf_g, dz, lengthx, lengthy, lengthz)
 		y1 = y1 + sy
 	   enddo
 	   
-	   y0 = 0.; y1 = d; x0 = 0.; x1 = d
+	   y0 = 0.; y1 = d
+       x0 = 0.; x1 = d
 	   do j = 0,N_y
 	    if ((yIn.gt.y0) .and. (yIn.lt.y1)) then
 	     do i = 0,N_x
@@ -456,7 +474,8 @@ function lattice(xIn, yIn, zIn, zf_g, dz, lengthx, lengthy, lengthz)
 	   enddo
 	   
 	  !Wall-normal
-	   z0 = 0.; z1 = INT(d/dz(1))*dz(1); y0 = 0.; y1 = d
+	   z0 = sz-d; z1 = sz !INT(d/dz(1))*dz(1)
+       y0 = 0.; y1 = d
 	   do k = 0,N_z
 	    if ((z_offset.gt.z0) .and. (z_offset.lt.z1)) then
 	     do j = 0,N_y
@@ -471,7 +490,8 @@ function lattice(xIn, yIn, zIn, zf_g, dz, lengthx, lengthy, lengthz)
 		z1 = z1 + sz
 	   enddo
 	   
-	   z0 = 0.; z1 = INT(d/dz(1))*dz(1); x0 = 0.; x1 = d
+	   z0 = sz-d; z1 = sz !INT(d/dz(1))*dz(1)
+       x0 = 0.; x1 = d
 	   do k = 0,N_z
 	    if ((z_offset.gt.z0) .and. (z_offset.lt.z1)) then
 	     do i = 0,N_x
@@ -489,7 +509,35 @@ function lattice(xIn, yIn, zIn, zf_g, dz, lengthx, lengthy, lengthz)
 	   endif
 
 end function lattice
+!
+function SolidWall(xIn, yIn, zIn, zf_g, dz, lengthx, lengthy, lengthz)
+  implicit none
+  logical :: SolidWall,read_z
+  real(rp), dimension(0:), intent(in) :: zf_g,dz
+  real(rp), intent(in) :: xIn,yIn,zIn,lengthx,lengthy,lengthz
+  real(rp) :: x0,y0,x1,y1,z0,z1,z_offset
+  real(rp) :: d
+  integer :: i,j,k,N_x,N_y,N_z
+	   
+	   SolidWall = .false.
+	   
+	   d = rod  !Rod thickness
+	   
+	   N_z = INT(depth/sz)
+	   N_y = INT(lengthy/sy)
+	   N_x = INT(lengthx/sx)
 
+       inquire(file='zf.dat',exist=read_z)
+	   if (read_z) then
+	    z_offset = zIn - zf_g(0)
+       else
+	    z_offset = zIn
+       endif
+	   
+	  if (z_offset.le.depth) SolidWall = .true.
+
+end function SolidWall
+!
 function height_map(xxx,yyy,zzz,ii,jj,dxl,dyl,dz,n,surf_height,lo,hi)
 implicit none
 logical :: height_map,cond1,cond2,cond3
@@ -625,18 +673,22 @@ integer , intent(in), dimension(3) :: n,lo,hi
 real(rp), intent(in ), dimension(1:n(1),1:n(2)) :: surf_height
 real(rp), intent(in):: xxx,yyy,zzz,dxl,dyl,dz
 integer, intent(in):: ii,jj
-real(rp):: zw
+real(rp) :: k,lambdax,lambday
+real(rp) :: zw
+
+     k = 1.0_rp/18.0_rp
+     lambdax = 113.0_rp/180.0_rp
+     lambday = lambdax
 
      wavywall=.false.
 
-     ! zw = 0.05*cos(2.*(4.*atan(1.))*xxx
-     zw = (2._rp/18._rp) &
-                          + (1._rp/18._rp)*cos(2._rp*(4._rp*atan(1._rp))*xxx/(7.1_rp/18._rp)) &
-                          *cos(2._rp*(4._rp*atan(1._rp))*yyy/(7.1_rp/18._rp))
+     zw = k &
+             + k*cos(2.0_rp*(4.0_rp*atan(1.0_rp))*xxx/lambdax) &
+                *cos(2.0_rp*(4.0_rp*atan(1.0_rp))*yyy/lambday)
 	 cond1 = zzz.le.zw
 #if defined(_IBM_BC)
-	 cond2 = abs((ii+lo(1)-1-.5)*dxl-xxx).le.(0.5*dxl)
-	 cond3 = abs((jj+lo(2)-1-.5)*dyl-yyy).le.(0.5*dyl)
+	 cond2 = abs((ii+lo(1)-1-0.5)*dxl-xxx).le.(0.5_rp*dxl)
+	 cond3 = abs((jj+lo(2)-1-0.5)*dyl-yyy).le.(0.5_rp*dyl)
 	 if (cond1.and.cond2.and.cond3) wavywall=.true.
 #else
 	 if (cond1) wavywall=.true.
@@ -651,14 +703,19 @@ integer , intent(in), dimension(3) :: n,lo,hi
 real(rp), intent(in ), dimension(1:n(1),1:n(2)) :: surf_height
 real(rp), intent(in):: xxx,yyy,zzz,dxl,dyl,dz
 integer,  intent(in):: ii,jj
-real(rp):: zw
+real(rp) :: k,lambdax,lambday
+real(rp) :: zw
+
+     k = 1._rp/18._rp
+     lambdax = 113._rp/180._rp
+     lambday = lambdax
 
 	 wavywall_ghost=.false.
 
-     ! zw = 0.05*2.*cos(2.*(4.*atan(1._rp))*((ii+lo(1)-1-.5)*dxl/2.))
-     zw = (2._rp/18._rp) &
-                          + (1._rp/18._rp)*cos(2._rp*(4._rp*atan(1._rp))*xxx/(7.1_rp/18._rp)) &
-                          *cos(2._rp*(4._rp*atan(1._rp))*yyy/(7.1_rp/18._rp))
+     zw = k &
+             + k*cos(2._rp*(4._rp*atan(1._rp))*xxx/lambdax) &
+                *cos(2._rp*(4._rp*atan(1._rp))*yyy/lambday)
+
      cond1 = zzz.le.zw
 	 ! cond1 = (zw.gt.zzz)
 	 ! cond2 = (abs(zw-zzz).lt.dz)
@@ -700,7 +757,7 @@ real(rp)::xxx,yyy,zzz,dxl,dyl
 integer, dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) :: ghost_cell_tag
 integer:: Level_set_all
 logical:: ghost
-
+!
 dli1=dli(1)
 dli2=dli(2)
 dli3=dli(3)
@@ -709,9 +766,9 @@ dl2=dl(2)
 dl3=dl(3)
 dxl = dx
 dyl = dy
-
+!
 ! Preparing normal vectors to the surfaces
-
+!
 ! Identifying the ghost cells
 ghost_cell_tag(:,:,:) = 0
 do k=1,int(solid_height_ratio*(n(3)+1))
@@ -719,8 +776,8 @@ if (myid.eq.0) print*, 'Calculating Normal Vectors at k = ', k
   do j=1,n(2)
    do i=1,n(1)
             ghost = .false.
-            xxx   =  (i+lo(1)-1-.5)*dx
-            yyy   =  (j+lo(2)-1-.5)*dy
+            xxx   =  (i+lo(1)-1-0.5)*dx
+            yyy   =  (j+lo(2)-1-0.5)*dy
             zzz   =  zc(k)
             if(trim(surface_type) == 'HeightMap') then 
 	            ghost = height_map_ghost(xxx,yyy,zzz,i,j,dzc(k),n,surf_height)
@@ -752,20 +809,16 @@ if (myid.eq.0) print*, 'Calculating Normal Vectors at k = ', k
    enddo
  enddo
 enddo
-
+!
 do k=1,n(3)
  do j=1,n(2)
   do i=1,n(1)
    if (ghost_cell_tag(i,j,k) .eq. 1) then
 
-      nx     = 0.
-      ny     = 0.
-      nz     = 0.
-      n_abs  = 0.
-      m_av_x = 0.
-      m_av_y = 0.
-      m_av_z = 0.
-      normal_denum = 0.
+      m_av_x = 0._rp
+      m_av_y = 0._rp
+      m_av_z = 0._rp
+      normal_denum = 0._rp
 
           !i+1/2 j+1/2 k+1/2
           mx1 = ((cell_phi_tag(i+1,j  ,k  )+cell_phi_tag(i+1,j+1,k  )+cell_phi_tag(i+1,j  ,k+1)+cell_phi_tag(i+1,j+1,k+1)) - &
@@ -847,16 +900,16 @@ do k=1,n(3)
                    (cell_phi_tag(i  ,j  ,k-1)+cell_phi_tag(i-1,j  ,k-1)+cell_phi_tag(i  ,j-1,k-1)+cell_phi_tag(i-1,j-1,k-1)))*dli3*0.25_rp
           !
       m_av_z = 0.125_rp*(mz1+mz2+mz3+mz4+mz5+mz6+mz7+mz8)
-      
+
       nx_surf_nonnorm(i,j,k) = m_av_x
       ny_surf_nonnorm(i,j,k) = m_av_y
       nz_surf_nonnorm(i,j,k) = m_av_z
 
-      normal_denum = sqrt(m_av_x**2 + m_av_y**2 + m_av_z**2)
+      normal_denum = sqrt(m_av_x**2 + m_av_y**2 + m_av_z**2 + small)
 
-      nx_surf(i,j,k) = m_av_x/max(normal_denum, small)
-      ny_surf(i,j,k) = m_av_y/max(normal_denum, small)
-      nz_surf(i,j,k) = m_av_z/max(normal_denum, small)
+      nx_surf(i,j,k) = m_av_x/normal_denum
+      ny_surf(i,j,k) = m_av_y/normal_denum
+      nz_surf(i,j,k) = m_av_z/normal_denum
 
       nabs_surf(i,j,k) = sqrt(nx_surf(i,j,k)**2 + ny_surf(i,j,k)**2 + nz_surf(i,j,k)**2)
 
@@ -902,7 +955,7 @@ distance_ghost_intersect= 1000._rp
 do k=1,int(solid_height_ratio*(n(3)+1))
  if (myid.eq.0) print*, 'Calculating Intersect Points at k = ', k
  step = 1.0e-5*dzc(k)
- lmax=100*int(2.*sqrt(3.)*dzc(k)/step)
+ lmax=100*int(2.0_rp*sqrt(3.0_rp)*dzc(k)/step)
  do j= 1,n(2)
    do i= 1,n(1)
     if (nabs_surf(i,j,k).gt.small) then
@@ -911,8 +964,8 @@ do k=1,int(solid_height_ratio*(n(3)+1))
        ny =   ny_surf(i,j,k)
        nz =   nz_surf(i,j,k)
        n_abs = nabs_surf(i,j,k)
-       x_ghost = (i+lo(1)-1-.5)*dx
-       y_ghost = (j+lo(2)-1-.5)*dy
+       x_ghost = (i+lo(1)-1-0.5)*dx
+       y_ghost = (j+lo(2)-1-0.5)*dy
        z_ghost = zc(k)
        do l=0,lmax
          yyy = y_ghost+l*(ny/(n_abs+small))*step
@@ -958,7 +1011,6 @@ do k=1,int(solid_height_ratio*(n(3)+1))
   enddo
 enddo
 
-return
 end subroutine intersect
 
 Subroutine mirrorpoints(n,lo,hi,&
@@ -1007,8 +1059,8 @@ if (myid.eq.0) print*, 'Calculating Mirror Points at k = ', k
    do i= 1,n(1)
     if (nabs_surf(i,j,k).gt.small) then
 
-       yyy = (i+lo(1)-1-.5)*dx
-       xxx = (j+lo(2)-1-.5)*dy
+       yyy = (i+lo(1)-1-0.5)*dx
+       xxx = (j+lo(2)-1-0.5)*dy
        zzz = zc(k)
 
        nx =   nx_surf(i,j,k)
@@ -1047,9 +1099,6 @@ if (myid.eq.0) print*, 'Calculating Mirror Points at k = ', k
   enddo
 enddo
 
-
-
-return
 end subroutine mirrorpoints
 
 Subroutine mirrorpoints_ijk(n,lo,hi, &
@@ -1204,9 +1253,8 @@ if (myid.eq.0) print*, 'Calculating mirror points indices at k = ', k
   enddo
  enddo
 enddo
-return
-end Subroutine mirrorpoints_ijk
 
+end Subroutine mirrorpoints_ijk
 
 Subroutine InterpolationWeights(n,lo,hi, &
                                 nabs_surf,Level_set, &
@@ -1254,26 +1302,26 @@ if (myid.eq.0) print*, 'Calculating Interpolation Weights at k = ', k
    ! Part one: cell-centered
    !***************************************************************************************
      !Initialization
-     xx1               = 0.
-     xx2               = 0.
-     yy1               = 0.
-     yy2               = 0.
-     zz1               = 0.
-     zz2               = 0.
+     xx1               = 0.0_rp
+     xx2               = 0.0_rp
+     yy1               = 0.0_rp
+     yy2               = 0.0_rp
+     zz1               = 0.0_rp
+     zz2               = 0.0_rp
      cond11            = .false.
      cond21            = .false.
      cond12            = .false.
      cond22            = .false.
-     contribution1(:)  =  0.
-     contribution2(:)  =  0.
-     x1(:)             =  0.
-     y1(:)             =  0.
-     z1(:)             =  0.
-     x2(:)             =  0.
-     y2(:)             =  0.
-     z2(:)             =  0.
-     h1(:)             =  0.
-     h2(:)             =  0.
+     contribution1(:)  =  0.0_rp
+     contribution2(:)  =  0.0_rp
+     x1(:)             =  0.0_rp
+     y1(:)             =  0.0_rp
+     z1(:)             =  0.0_rp
+     x2(:)             =  0.0_rp
+     y2(:)             =  0.0_rp
+     z2(:)             =  0.0_rp
+     h1(:)             =  0.0_rp
+     h2(:)             =  0.0_rp
      i_p_1(:)          =  0
      j_p_1(:)          =  0
      k_p_1(:)          =  0
@@ -1353,18 +1401,18 @@ if (myid.eq.0) print*, 'Calculating Interpolation Weights at k = ', k
 
         do ii = 1,7
            cond11 = (Level_set(i_p_1(ii),j_p_1(ii),k_p_1(ii)).eq.1)
-           cond21 = (nabs_surf(i_p_1(ii),j_p_1(ii),k_p_1(ii)).eq.0.)
+           cond21 = (nabs_surf(i_p_1(ii),j_p_1(ii),k_p_1(ii)).eq.0.0_rp)
            cond12 = (Level_set(i_p_2(ii),j_p_2(ii),k_p_2(ii)).eq.1)
-           cond22 = (nabs_surf(i_p_2(ii),j_p_2(ii),k_p_2(ii)).eq.0.)
+           cond22 = (nabs_surf(i_p_2(ii),j_p_2(ii),k_p_2(ii)).eq.0.0_rp)
 
-           if (cond11.and.cond21) contribution1(ii) = 1.
-           if (cond12.and.cond22) contribution2(ii) = 1.
+           if (cond11.and.cond21) contribution1(ii) = 1.0_rp
+           if (cond12.and.cond22) contribution2(ii) = 1.0_rp
 
-           x1(ii) = (i_p_1(ii)+lo(1)-1-.5)*dx 
-           y1(ii) = (j_p_1(ii)+lo(2)-1-.5)*dy
+           x1(ii) = (i_p_1(ii)+lo(1)-1-0.5)*dx 
+           y1(ii) = (j_p_1(ii)+lo(2)-1-0.5)*dy
            z1(ii) = zc(k_p_1(ii)           )
-           x2(ii) = (i_p_2(ii)+lo(1)-1-.5)*dx 
-           y2(ii) = (j_p_2(ii)+lo(2)-1-.5)*dy
+           x2(ii) = (i_p_2(ii)+lo(1)-1-0.5)*dx 
+           y2(ii) = (j_p_2(ii)+lo(2)-1-0.5)*dy
            z2(ii) = zc(k_p_2(ii)           )
         enddo
 
@@ -1374,31 +1422,31 @@ if (myid.eq.0) print*, 'Calculating Interpolation Weights at k = ', k
         enddo
 
         do ii = 1,7
-         WP1(i,j,k,ii)  = (1./(h1(ii)*h1(ii)))*contribution1(ii)
-         WP2(i,j,k,ii)  = (1./(h2(ii)*h2(ii)))*contribution2(ii)
+         WP1(i,j,k,ii)  = (1.0/(h1(ii)*h1(ii)))*contribution1(ii)
+         WP2(i,j,k,ii)  = (1.0/(h2(ii)*h2(ii)))*contribution2(ii)
         enddo
 
         !-------- Exceptional cases ---------------------
         do ii = 1,7
-         if ((h1(ii).lt.(1.e-8_rp)).and.(contribution1(ii).eq.1._rp)) then
-             WP1(i,j,k,1)  = 0.
-             WP1(i,j,k,2)  = 0.
-             WP1(i,j,k,3)  = 0.
-             WP1(i,j,k,4)  = 0.
-             WP1(i,j,k,5)  = 0.
-             WP1(i,j,k,6)  = 0.
-             WP1(i,j,k,7)  = 0.
-             WP1(i,j,k,ii) = 1.
+         if ((h1(ii).lt.(1.e-8_rp)).and.(contribution1(ii).eq.1.0_rp)) then
+             WP1(i,j,k,1)  = 0.0_rp
+             WP1(i,j,k,2)  = 0.0_rp
+             WP1(i,j,k,3)  = 0.0_rp
+             WP1(i,j,k,4)  = 0.0_rp
+             WP1(i,j,k,5)  = 0.0_rp
+             WP1(i,j,k,6)  = 0.0_rp
+             WP1(i,j,k,7)  = 0.0_rp
+             WP1(i,j,k,ii) = 1.0_rp
          endif
-         if ((h2(ii).lt.(1.e-8_rp)).and.(contribution2(ii).eq.1._rp)) then
-             WP2(i,j,k,1)  = 0.
-             WP2(i,j,k,2)  = 0.
-             WP2(i,j,k,3)  = 0.
-             WP2(i,j,k,4)  = 0.
-             WP2(i,j,k,5)  = 0.
-             WP2(i,j,k,6)  = 0.
-             WP2(i,j,k,7)  = 0.
-             WP2(i,j,k,ii) = 1.
+         if ((h2(ii).lt.(1.e-8_rp)).and.(contribution2(ii).eq.1.0_rp)) then
+             WP2(i,j,k,1)  = 0.0_rp
+             WP2(i,j,k,2)  = 0.0_rp
+             WP2(i,j,k,3)  = 0.0_rp
+             WP2(i,j,k,4)  = 0.0_rp
+             WP2(i,j,k,5)  = 0.0_rp
+             WP2(i,j,k,6)  = 0.0_rp
+             WP2(i,j,k,7)  = 0.0_rp
+             WP2(i,j,k,ii) = 1.0_rp
          endif
        enddo
        !-------------------------------------------
@@ -1428,15 +1476,15 @@ real(rp) :: q1,q2,B_1,B_2
 integer  :: ii1,jj1,kk1,ii2,jj2,kk2,l
 
 !initialization
-q1       = 0.
-q2       = 0.
-WW1(:)   = 0.
-WW2(:)   = 0.
-B1(:)    = 0.
-B2(:)    = 0.
-B_1      = 0.
-B_2      = 0.
-BB       = 0.
+q1       = 0.0_rp
+q2       = 0.0_rp
+WW1(:)   = 0.0_rp
+WW2(:)   = 0.0_rp
+B1(:)    = 0.0_rp
+B2(:)    = 0.0_rp
+B_1      = 0.0_rp
+B_2      = 0.0_rp
+BB       = 0.0_rp
 
 ii1    = i_IP1(iii,jjj,kkk) ! Coordinates for cell of interpolation point 1 (IP1)
 jj1    = j_IP1(iii,jjj,kkk)
@@ -1475,15 +1523,15 @@ B2(6)   = AA(ii2-1,jj2,kk2)
 B2(7)   = AA(ii2+1,jj2,kk2)
 
 do l = 1,7 ! Sum weights
-   q1 =  max(WW1(l) + q1, small)
-   q2 =  max(WW2(l) + q2, small)
+   q1 =  WW1(l) + q1 + small
+   q2 =  WW2(l) + q2 + small
 enddo
 
 do l = 1,7 ! Compute value at IP1 and IP2
-   B_1 = (1./q1)*(WW1(l)*B1(l))+B_1
-   B_2 = (1./q2)*(WW2(l)*B2(l))+B_2
+   B_1 = (1.0/q1)*(WW1(l)*B1(l))+B_1
+   B_2 = (1.0/q2)*(WW2(l)*B2(l))+B_2
 enddo
-BB = 2.*B_1-B_2 ! Value at mirror point
+BB = 2.0_rp*B_1-B_2 ! Value at mirror point
 
 end subroutine interpolation_mirror
 
@@ -1511,22 +1559,22 @@ real(rp)::  U_1,U_2,V_1,V_2,W_1,W_2
 integer:: ii1,jj1,kk1,ii2,jj2,kk2,l
 
 !initialization
-q1      = 0.
-q2      = 0.
-WW1(:)  = 0.
-WW2(:)  = 0.
-U1(:)   = 0.
-U2(:)   = 0.
-V1(:)   = 0.
-V2(:)   = 0.
-W1(:)   = 0.
-W2(:)   = 0.
-U_1     = 0.
-U_2     = 0.
-V_1     = 0.
-V_2     = 0.
-W_1     = 0.
-W_2     = 0.
+q1      = 0.0_rp
+q2      = 0.0_rp
+WW1(:)  = 0.0_rp
+WW2(:)  = 0.0_rp
+U1(:)   = 0.0_rp
+U2(:)   = 0.0_rp
+V1(:)   = 0.0_rp
+V2(:)   = 0.0_rp
+W1(:)   = 0.0_rp
+W2(:)   = 0.0_rp
+U_1     = 0.0_rp
+U_2     = 0.0_rp
+V_1     = 0.0_rp
+V_2     = 0.0_rp
+W_1     = 0.0_rp
+W_2     = 0.0_rp
 
 ii1     = i_IP1(iii,jjj,kkk)
 jj1     = j_IP1(iii,jjj,kkk)
@@ -1596,22 +1644,22 @@ W2(6)    = WW(ii2-1,jj2,  kk2)
 W2(7)    = WW(ii2+1,jj2,  kk2)
 
 do l = 1,7
-   q1 =  max(WW1(l) + q1, small)
-   q2 =  max(WW2(l) + q2, small)
+   q1 =  WW1(l) + q1 + small
+   q2 =  WW2(l) + q2 + small
 enddo
 
 do l = 1,7
- U_1 = (1./q1)*(WW1(l)*U1(l))+U_1
- U_2 = (1./q2)*(WW2(l)*U2(l))+U_2
- V_1 = (1./q1)*(WW1(l)*V1(l))+V_1
- V_2 = (1./q2)*(WW2(l)*V2(l))+V_2
- W_1 = (1./q1)*(WW1(l)*W1(l))+W_1
- W_2 = (1./q2)*(WW2(l)*W2(l))+W_2
+ U_1 = (1.0/q1)*(WW1(l)*U1(l))+U_1
+ U_2 = (1.0/q2)*(WW2(l)*U2(l))+U_2
+ V_1 = (1.0/q1)*(WW1(l)*V1(l))+V_1
+ V_2 = (1.0/q2)*(WW2(l)*V2(l))+V_2
+ W_1 = (1.0/q1)*(WW1(l)*W1(l))+W_1
+ W_2 = (1.0/q2)*(WW2(l)*W2(l))+W_2
 enddo
 
-u_m = 2.*U_1-U_2
-V_m = 2.*V_1-V_2
-W_m = 2.*W_1-W_2
+u_m = 2.0_rp*U_1-U_2
+V_m = 2.0_rp*V_1-V_2
+W_m = 2.0_rp*W_1-W_2
 
 return
 end subroutine interpolation_2D_velocity
@@ -1645,34 +1693,34 @@ real(rp) :: phi_x1(7),phi_y1(7),phi_z1(7),phi_x2(7),phi_y2(7),phi_z2(7)
 real(rp) :: dphidx1,dphidy1,dphidz1,dphidx2,dphidy2,dphidz2,dzi
 
 !initialization
-q1          = 0.
-q2          = 0.
-WW1(:)      = 0.
-WW2(:)      = 0.
-phi_ip1(:)  = 0.
-phi_im1(:)  = 0.
-phi_jp1(:)  = 0.
-phi_jm1(:)  = 0.
-phi_kp1(:)  = 0.
-phi_km1(:)  = 0.
-phi_ip2(:)  = 0.
-phi_im2(:)  = 0.
-phi_jp2(:)  = 0.
-phi_jm2(:)  = 0.
-phi_kp2(:)  = 0.
-phi_km2(:)  = 0.
-phi_x1(:)   = 0.
-phi_y1(:)   = 0.
-phi_z1(:)   = 0.
-phi_x2(:)   = 0.
-phi_y2(:)   = 0.
-phi_z2(:)   = 0.
-dphidx1     = 0.
-dphidy1     = 0.
-dphidz1     = 0.
-dphidx2     = 0.
-dphidy2     = 0.
-dphidz2     = 0.
+q1          = 0.0_rp
+q2          = 0.0_rp
+WW1(:)      = 0.0_rp
+WW2(:)      = 0.0_rp
+phi_ip1(:)  = 0.0_rp
+phi_im1(:)  = 0.0_rp
+phi_jp1(:)  = 0.0_rp
+phi_jm1(:)  = 0.0_rp
+phi_kp1(:)  = 0.0_rp
+phi_km1(:)  = 0.0_rp
+phi_ip2(:)  = 0.0_rp
+phi_im2(:)  = 0.0_rp
+phi_jp2(:)  = 0.0_rp
+phi_jm2(:)  = 0.0_rp
+phi_kp2(:)  = 0.0_rp
+phi_km2(:)  = 0.0_rp
+phi_x1(:)   = 0.0_rp
+phi_y1(:)   = 0.0_rp
+phi_z1(:)   = 0.0_rp
+phi_x2(:)   = 0.0_rp
+phi_y2(:)   = 0.0_rp
+phi_z2(:)   = 0.0_rp
+dphidx1     = 0.0_rp
+dphidy1     = 0.0_rp
+dphidz1     = 0.0_rp
+dphidx2     = 0.0_rp
+dphidy2     = 0.0_rp
+dphidz2     = 0.0_rp
 
   ii1     = i_IP1(iii,jjj,kkk)
   jj1     = j_IP1(iii,jjj,kkk)
@@ -1697,112 +1745,111 @@ dphidz2     = 0.
   WW2(7) = WP2(iii,jjj,kkk,7)
 
   ! Cell edge values for AP for IP1
-  phi_ip1(1) = 0.*(PFM_phi(ii1,jj1+1,kk1)+PFM_phi(ii1+1,jj1+1,kk1))
-  phi_im1(1) = 0.*(PFM_phi(ii1,jj1+1,kk1)+PFM_phi(ii1-1,jj1+1,kk1))
-  phi_jp1(1) = 0.*(PFM_phi(ii1,jj1+1,kk1)+PFM_phi(ii1,jj1+2,kk1))
-  phi_jm1(1) = 0.*(PFM_phi(ii1,jj1+1,kk1)+PFM_phi(ii1,jj1,kk1))
-  phi_kp1(1) = 0.*(PFM_phi(ii1,jj1+1,kk1)+PFM_phi(ii1,jj1+1,kk1+1))
-  phi_km1(1) = 0.*(PFM_phi(ii1,jj1+1,kk1)+PFM_phi(ii1,jj1+1,kk1-1))
+  phi_ip1(1) = 0.5_rp*(PFM_phi(ii1,jj1+1,kk1)+PFM_phi(ii1+1,jj1+1,kk1))
+  phi_im1(1) = 0.5_rp*(PFM_phi(ii1,jj1+1,kk1)+PFM_phi(ii1-1,jj1+1,kk1))
+  phi_jp1(1) = 0.5_rp*(PFM_phi(ii1,jj1+1,kk1)+PFM_phi(ii1,jj1+2,kk1))
+  phi_jm1(1) = 0.5_rp*(PFM_phi(ii1,jj1+1,kk1)+PFM_phi(ii1,jj1,kk1))
+  phi_kp1(1) = 0.5_rp*(PFM_phi(ii1,jj1+1,kk1)+PFM_phi(ii1,jj1+1,kk1+1))
+  phi_km1(1) = 0.5_rp*(PFM_phi(ii1,jj1+1,kk1)+PFM_phi(ii1,jj1+1,kk1-1))
 
 
-  phi_ip1(2) = 0.*(PFM_phi(ii1,jj1,kk1+1)+PFM_phi(ii1+1,jj1,kk1+1))
-  phi_im1(2) = 0.*(PFM_phi(ii1,jj1,kk1+1)+PFM_phi(ii1-1,jj1-1,kk1+1))
-  phi_jp1(2) = 0.*(PFM_phi(ii1,jj1,kk1+1)+PFM_phi(ii1,jj1+1,kk1+1))
-  phi_jm1(2) = 0.*(PFM_phi(ii1,jj1,kk1+1)+PFM_phi(ii1,jj1-1,kk1+1))
-  phi_kp1(2) = 0.*(PFM_phi(ii1,jj1,kk1+1)+PFM_phi(ii1,jj1,kk1+2))
-  phi_km1(2) = 0.*(PFM_phi(ii1,jj1,kk1+1)+PFM_phi(ii1,jj1,kk1))
+  phi_ip1(2) = 0.5_rp*(PFM_phi(ii1,jj1,kk1+1)+PFM_phi(ii1+1,jj1,kk1+1))
+  phi_im1(2) = 0.5_rp*(PFM_phi(ii1,jj1,kk1+1)+PFM_phi(ii1-1,jj1-1,kk1+1))
+  phi_jp1(2) = 0.5_rp*(PFM_phi(ii1,jj1,kk1+1)+PFM_phi(ii1,jj1+1,kk1+1))
+  phi_jm1(2) = 0.5_rp*(PFM_phi(ii1,jj1,kk1+1)+PFM_phi(ii1,jj1-1,kk1+1))
+  phi_kp1(2) = 0.5_rp*(PFM_phi(ii1,jj1,kk1+1)+PFM_phi(ii1,jj1,kk1+2))
+  phi_km1(2) = 0.5_rp*(PFM_phi(ii1,jj1,kk1+1)+PFM_phi(ii1,jj1,kk1))
 
 
-  phi_ip1(3) = 0.*(PFM_phi(ii1,jj1-1,kk1)+PFM_phi(ii1+1,jj1-1,kk1))
-  phi_im1(3) = 0.*(PFM_phi(ii1,jj1-1,kk1)+PFM_phi(ii1-1,jj1-1,kk1))
-  phi_jp1(3) = 0.*(PFM_phi(ii1,jj1-1,kk1)+PFM_phi(ii1,jj1,kk1))
-  phi_jm1(3) = 0.*(PFM_phi(ii1,jj1-1,kk1)+PFM_phi(ii1,jj1-2,kk1))
-  phi_kp1(3) = 0.*(PFM_phi(ii1,jj1-1,kk1)+PFM_phi(ii1,jj1-1,kk1+1))
-  phi_km1(3) = 0.*(PFM_phi(ii1,jj1-1,kk1)+PFM_phi(ii1,jj1-1,kk1-1))
+  phi_ip1(3) = 0.5_rp*(PFM_phi(ii1,jj1-1,kk1)+PFM_phi(ii1+1,jj1-1,kk1))
+  phi_im1(3) = 0.5_rp*(PFM_phi(ii1,jj1-1,kk1)+PFM_phi(ii1-1,jj1-1,kk1))
+  phi_jp1(3) = 0.5_rp*(PFM_phi(ii1,jj1-1,kk1)+PFM_phi(ii1,jj1,kk1))
+  phi_jm1(3) = 0.5_rp*(PFM_phi(ii1,jj1-1,kk1)+PFM_phi(ii1,jj1-2,kk1))
+  phi_kp1(3) = 0.5_rp*(PFM_phi(ii1,jj1-1,kk1)+PFM_phi(ii1,jj1-1,kk1+1))
+  phi_km1(3) = 0.5_rp*(PFM_phi(ii1,jj1-1,kk1)+PFM_phi(ii1,jj1-1,kk1-1))
 
-  phi_ip1(4) = 0.*(PFM_phi(ii1,jj1,kk1-1)+PFM_phi(ii1+1,jj1,kk1-1))
-  phi_im1(4) = 0.*(PFM_phi(ii1,jj1,kk1-1)+PFM_phi(ii1-1,jj1-1,kk1-1))
-  phi_jp1(4) = 0.*(PFM_phi(ii1,jj1,kk1-1)+PFM_phi(ii1,jj1+1,kk1-1))
-  phi_jm1(4) = 0.*(PFM_phi(ii1,jj1,kk1-1)+PFM_phi(ii1,jj1-1,kk1-1))
-  phi_kp1(4) = 0.*(PFM_phi(ii1,jj1,kk1-1)+PFM_phi(ii1,jj1,kk1))
-  phi_km1(4) = 0.*(PFM_phi(ii1,jj1,kk1-1)+PFM_phi(ii1,jj1,kk1-2))
-
-
-  phi_ip1(5) = 0.*(PFM_phi(ii1,jj1,kk1)+PFM_phi(ii1+1,jj1,kk1))
-  phi_im1(5) = 0.*(PFM_phi(ii1,jj1,kk1)+PFM_phi(ii1-1,jj1,kk1))
-  phi_jp1(5) = 0.*(PFM_phi(ii1,jj1,kk1)+PFM_phi(ii1,jj1+1,kk1))
-  phi_jm1(5) = 0.*(PFM_phi(ii1,jj1,kk1)+PFM_phi(ii1,jj1-1,kk1))
-  phi_kp1(5) = 0.*(PFM_phi(ii1,jj1,kk1)+PFM_phi(ii1,jj1,kk1+1))
-  phi_km1(5) = 0.*(PFM_phi(ii1,jj1,kk1)+PFM_phi(ii1,jj1,kk1-1))
+  phi_ip1(4) = 0.5_rp*(PFM_phi(ii1,jj1,kk1-1)+PFM_phi(ii1+1,jj1,kk1-1))
+  phi_im1(4) = 0.5_rp*(PFM_phi(ii1,jj1,kk1-1)+PFM_phi(ii1-1,jj1-1,kk1-1))
+  phi_jp1(4) = 0.5_rp*(PFM_phi(ii1,jj1,kk1-1)+PFM_phi(ii1,jj1+1,kk1-1))
+  phi_jm1(4) = 0.5_rp*(PFM_phi(ii1,jj1,kk1-1)+PFM_phi(ii1,jj1-1,kk1-1))
+  phi_kp1(4) = 0.5_rp*(PFM_phi(ii1,jj1,kk1-1)+PFM_phi(ii1,jj1,kk1))
+  phi_km1(4) = 0.5_rp*(PFM_phi(ii1,jj1,kk1-1)+PFM_phi(ii1,jj1,kk1-2))
 
 
-  phi_ip1(6) = 0.*(PFM_phi(ii1-1,jj1,kk1)+PFM_phi(ii1,jj1,kk1))
-  phi_im1(6) = 0.*(PFM_phi(ii1-1,jj1,kk1)+PFM_phi(ii1-2,jj1,kk1))
-  phi_jp1(6) = 0.*(PFM_phi(ii1-1,jj1,kk1)+PFM_phi(ii1-1,jj1+1,kk1))
-  phi_jm1(6) = 0.*(PFM_phi(ii1-1,jj1,kk1)+PFM_phi(ii1-1,jj1-1,kk1))
-  phi_kp1(6) = 0.*(PFM_phi(ii1-1,jj1,kk1)+PFM_phi(ii1-1,jj1,kk1+1))
-  phi_km1(6) = 0.*(PFM_phi(ii1-1,jj1,kk1)+PFM_phi(ii1-1,jj1,kk1-1))
+  phi_ip1(5) = 0.5_rp*(PFM_phi(ii1,jj1,kk1)+PFM_phi(ii1+1,jj1,kk1))
+  phi_im1(5) = 0.5_rp*(PFM_phi(ii1,jj1,kk1)+PFM_phi(ii1-1,jj1,kk1))
+  phi_jp1(5) = 0.5_rp*(PFM_phi(ii1,jj1,kk1)+PFM_phi(ii1,jj1+1,kk1))
+  phi_jm1(5) = 0.5_rp*(PFM_phi(ii1,jj1,kk1)+PFM_phi(ii1,jj1-1,kk1))
+  phi_kp1(5) = 0.5_rp*(PFM_phi(ii1,jj1,kk1)+PFM_phi(ii1,jj1,kk1+1))
+  phi_km1(5) = 0.5_rp*(PFM_phi(ii1,jj1,kk1)+PFM_phi(ii1,jj1,kk1-1))
 
 
-  phi_ip1(7) = 0.*(PFM_phi(ii1+1,jj1,kk1)+PFM_phi(ii1+2,jj1,kk1))
-  phi_im1(7) = 0.*(PFM_phi(ii1+1,jj1,kk1)+PFM_phi(ii1,jj1,kk1))
-  phi_jp1(7) = 0.*(PFM_phi(ii1+1,jj1,kk1)+PFM_phi(ii1+1,jj1+1,kk1))
-  phi_jm1(7) = 0.*(PFM_phi(ii1+1,jj1,kk1)+PFM_phi(ii1+1,jj1-1,kk1))
-  phi_kp1(7) = 0.*(PFM_phi(ii1+1,jj1,kk1)+PFM_phi(ii1+1,jj1,kk1+1))
-  phi_km1(7) = 0.*(PFM_phi(ii1+1,jj1,kk1)+PFM_phi(ii1+1,jj1,kk1-1))
+  phi_ip1(6) = 0.5_rp*(PFM_phi(ii1-1,jj1,kk1)+PFM_phi(ii1,jj1,kk1))
+  phi_im1(6) = 0.5_rp*(PFM_phi(ii1-1,jj1,kk1)+PFM_phi(ii1-2,jj1,kk1))
+  phi_jp1(6) = 0.5_rp*(PFM_phi(ii1-1,jj1,kk1)+PFM_phi(ii1-1,jj1+1,kk1))
+  phi_jm1(6) = 0.5_rp*(PFM_phi(ii1-1,jj1,kk1)+PFM_phi(ii1-1,jj1-1,kk1))
+  phi_kp1(6) = 0.5_rp*(PFM_phi(ii1-1,jj1,kk1)+PFM_phi(ii1-1,jj1,kk1+1))
+  phi_km1(6) = 0.5_rp*(PFM_phi(ii1-1,jj1,kk1)+PFM_phi(ii1-1,jj1,kk1-1))
+
+
+  phi_ip1(7) = 0.5_rp*(PFM_phi(ii1+1,jj1,kk1)+PFM_phi(ii1+2,jj1,kk1))
+  phi_im1(7) = 0.5_rp*(PFM_phi(ii1+1,jj1,kk1)+PFM_phi(ii1,jj1,kk1))
+  phi_jp1(7) = 0.5_rp*(PFM_phi(ii1+1,jj1,kk1)+PFM_phi(ii1+1,jj1+1,kk1))
+  phi_jm1(7) = 0.5_rp*(PFM_phi(ii1+1,jj1,kk1)+PFM_phi(ii1+1,jj1-1,kk1))
+  phi_kp1(7) = 0.5_rp*(PFM_phi(ii1+1,jj1,kk1)+PFM_phi(ii1+1,jj1,kk1+1))
+  phi_km1(7) = 0.5_rp*(PFM_phi(ii1+1,jj1,kk1)+PFM_phi(ii1+1,jj1,kk1-1))
 
   ! Cell edge values for AP for IP2
-  phi_ip2(1) = 0.*(PFM_phi(ii2,jj2+1,kk2)+PFM_phi(ii2+1,jj2+1,kk2))
-  phi_im2(1) = 0.*(PFM_phi(ii2,jj2+1,kk2)+PFM_phi(ii2-1,jj2+1,kk2))
-  phi_jp2(1) = 0.*(PFM_phi(ii2,jj2+1,kk2)+PFM_phi(ii2,jj2+2,kk2))
-  phi_jm2(1) = 0.*(PFM_phi(ii2,jj2+1,kk2)+PFM_phi(ii2,jj2,kk2))
-  phi_kp2(1) = 0.*(PFM_phi(ii2,jj2+1,kk2)+PFM_phi(ii2,jj2+1,kk2+1))
-  phi_km2(1) = 0.*(PFM_phi(ii2,jj2+1,kk2)+PFM_phi(ii2,jj2+1,kk2-1))
+  phi_ip2(1) = 0.5_rp*(PFM_phi(ii2,jj2+1,kk2)+PFM_phi(ii2+1,jj2+1,kk2))
+  phi_im2(1) = 0.5_rp*(PFM_phi(ii2,jj2+1,kk2)+PFM_phi(ii2-1,jj2+1,kk2))
+  phi_jp2(1) = 0.5_rp*(PFM_phi(ii2,jj2+1,kk2)+PFM_phi(ii2,jj2+2,kk2))
+  phi_jm2(1) = 0.5_rp*(PFM_phi(ii2,jj2+1,kk2)+PFM_phi(ii2,jj2,kk2))
+  phi_kp2(1) = 0.5_rp*(PFM_phi(ii2,jj2+1,kk2)+PFM_phi(ii2,jj2+1,kk2+1))
+  phi_km2(1) = 0.5_rp*(PFM_phi(ii2,jj2+1,kk2)+PFM_phi(ii2,jj2+1,kk2-1))
 
-  phi_ip2(2) = 0.*(PFM_phi(ii2,jj2,kk2+1)+PFM_phi(ii2+1,jj2,kk2+1))
-  phi_im2(2) = 0.*(PFM_phi(ii2,jj2,kk2+1)+PFM_phi(ii2-1,jj2-1,kk2+1))
-  phi_jp2(2) = 0.*(PFM_phi(ii2,jj2,kk2+1)+PFM_phi(ii2,jj2+1,kk2+1))
-  phi_jm2(2) = 0.*(PFM_phi(ii2,jj2,kk2+1)+PFM_phi(ii2,jj2-1,kk2+1))
-  phi_kp2(2) = 0.*(PFM_phi(ii2,jj2,kk2+1)+PFM_phi(ii2,jj2,kk2+2))
-  phi_km2(2) = 0.*(PFM_phi(ii2,jj2,kk2+1)+PFM_phi(ii2,jj2,kk2))
+  phi_ip2(2) = 0.5_rp*(PFM_phi(ii2,jj2,kk2+1)+PFM_phi(ii2+1,jj2,kk2+1))
+  phi_im2(2) = 0.5_rp*(PFM_phi(ii2,jj2,kk2+1)+PFM_phi(ii2-1,jj2-1,kk2+1))
+  phi_jp2(2) = 0.5_rp*(PFM_phi(ii2,jj2,kk2+1)+PFM_phi(ii2,jj2+1,kk2+1))
+  phi_jm2(2) = 0.5_rp*(PFM_phi(ii2,jj2,kk2+1)+PFM_phi(ii2,jj2-1,kk2+1))
+  phi_kp2(2) = 0.5_rp*(PFM_phi(ii2,jj2,kk2+1)+PFM_phi(ii2,jj2,kk2+2))
+  phi_km2(2) = 0.5_rp*(PFM_phi(ii2,jj2,kk2+1)+PFM_phi(ii2,jj2,kk2))
 
-  phi_ip2(3) = 0.*(PFM_phi(ii2,jj2-1,kk2)+PFM_phi(ii2+1,jj2-1,kk2))
-  phi_im2(3) = 0.*(PFM_phi(ii2,jj2-1,kk2)+PFM_phi(ii2-1,jj2-1,kk2))
-  phi_jp2(3) = 0.*(PFM_phi(ii2,jj2-1,kk2)+PFM_phi(ii2,jj2,kk2))
-  phi_jm2(3) = 0.*(PFM_phi(ii2,jj2-1,kk2)+PFM_phi(ii2,jj2-2,kk2))
-  phi_kp2(3) = 0.*(PFM_phi(ii2,jj2-1,kk2)+PFM_phi(ii2,jj2-1,kk2+1))
-  phi_km2(3) = 0.*(PFM_phi(ii2,jj2-1,kk2)+PFM_phi(ii2,jj2-1,kk2-1))
+  phi_ip2(3) = 0.5_rp*(PFM_phi(ii2,jj2-1,kk2)+PFM_phi(ii2+1,jj2-1,kk2))
+  phi_im2(3) = 0.5_rp*(PFM_phi(ii2,jj2-1,kk2)+PFM_phi(ii2-1,jj2-1,kk2))
+  phi_jp2(3) = 0.5_rp*(PFM_phi(ii2,jj2-1,kk2)+PFM_phi(ii2,jj2,kk2))
+  phi_jm2(3) = 0.5_rp*(PFM_phi(ii2,jj2-1,kk2)+PFM_phi(ii2,jj2-2,kk2))
+  phi_kp2(3) = 0.5_rp*(PFM_phi(ii2,jj2-1,kk2)+PFM_phi(ii2,jj2-1,kk2+1))
+  phi_km2(3) = 0.5_rp*(PFM_phi(ii2,jj2-1,kk2)+PFM_phi(ii2,jj2-1,kk2-1))
 
-  phi_ip2(4) = 0.*(PFM_phi(ii2,jj2,kk2-1)+PFM_phi(ii2+1,jj2,kk2-1))
-  phi_im2(4) = 0.*(PFM_phi(ii2,jj2,kk2-1)+PFM_phi(ii2-1,jj2-1,kk2-1))
-  phi_jp2(4) = 0.*(PFM_phi(ii2,jj2,kk2-1)+PFM_phi(ii2,jj2+1,kk2-1))
-  phi_jm2(4) = 0.*(PFM_phi(ii2,jj2,kk2-1)+PFM_phi(ii2,jj2-1,kk2-1))
-  phi_kp2(4) = 0.*(PFM_phi(ii2,jj2,kk2-1)+PFM_phi(ii2,jj2,kk2))
-  phi_km2(4) = 0.*(PFM_phi(ii2,jj2,kk2-1)+PFM_phi(ii2,jj2,kk2-2))
+  phi_ip2(4) = 0.5_rp*(PFM_phi(ii2,jj2,kk2-1)+PFM_phi(ii2+1,jj2,kk2-1))
+  phi_im2(4) = 0.5_rp*(PFM_phi(ii2,jj2,kk2-1)+PFM_phi(ii2-1,jj2-1,kk2-1))
+  phi_jp2(4) = 0.5_rp*(PFM_phi(ii2,jj2,kk2-1)+PFM_phi(ii2,jj2+1,kk2-1))
+  phi_jm2(4) = 0.5_rp*(PFM_phi(ii2,jj2,kk2-1)+PFM_phi(ii2,jj2-1,kk2-1))
+  phi_kp2(4) = 0.5_rp*(PFM_phi(ii2,jj2,kk2-1)+PFM_phi(ii2,jj2,kk2))
+  phi_km2(4) = 0.5_rp*(PFM_phi(ii2,jj2,kk2-1)+PFM_phi(ii2,jj2,kk2-2))
 
-  phi_ip2(5) = 0.*(PFM_phi(ii2,jj2,kk2)+PFM_phi(ii2+1,jj2,kk2))
-  phi_im2(5) = 0.*(PFM_phi(ii2,jj2,kk2)+PFM_phi(ii2-1,jj2,kk2))
-  phi_jp2(5) = 0.*(PFM_phi(ii2,jj2,kk2)+PFM_phi(ii2,jj2+1,kk2))
-  phi_jm2(5) = 0.*(PFM_phi(ii2,jj2,kk2)+PFM_phi(ii2,jj2-1,kk2))
-  phi_kp2(5) = 0.*(PFM_phi(ii2,jj2,kk2)+PFM_phi(ii2,jj2,kk2+1))
-  phi_km2(5) = 0.*(PFM_phi(ii2,jj2,kk2)+PFM_phi(ii2,jj2,kk2-1))
+  phi_ip2(5) = 0.5_rp*(PFM_phi(ii2,jj2,kk2)+PFM_phi(ii2+1,jj2,kk2))
+  phi_im2(5) = 0.5_rp*(PFM_phi(ii2,jj2,kk2)+PFM_phi(ii2-1,jj2,kk2))
+  phi_jp2(5) = 0.5_rp*(PFM_phi(ii2,jj2,kk2)+PFM_phi(ii2,jj2+1,kk2))
+  phi_jm2(5) = 0.5_rp*(PFM_phi(ii2,jj2,kk2)+PFM_phi(ii2,jj2-1,kk2))
+  phi_kp2(5) = 0.5_rp*(PFM_phi(ii2,jj2,kk2)+PFM_phi(ii2,jj2,kk2+1))
+  phi_km2(5) = 0.5_rp*(PFM_phi(ii2,jj2,kk2)+PFM_phi(ii2,jj2,kk2-1))
 
-  phi_ip2(6) = 0.*(PFM_phi(ii2-1,jj2,kk2)+PFM_phi(ii2,jj2,kk2))
-  phi_im2(6) = 0.*(PFM_phi(ii2-1,jj2,kk2)+PFM_phi(ii2-2,jj2,kk2))
-  phi_jp2(6) = 0.*(PFM_phi(ii2-1,jj2,kk2)+PFM_phi(ii2-1,jj2+1,kk2))
-  phi_jm2(6) = 0.*(PFM_phi(ii2-1,jj2,kk2)+PFM_phi(ii2-1,jj2-1,kk2))
-  phi_kp2(6) = 0.*(PFM_phi(ii2-1,jj2,kk2)+PFM_phi(ii2-1,jj2,kk2+1))
-  phi_km2(6) = 0.*(PFM_phi(ii2-1,jj2,kk2)+PFM_phi(ii2-1,jj2,kk2-1))
+  phi_ip2(6) = 0.5_rp*(PFM_phi(ii2-1,jj2,kk2)+PFM_phi(ii2,jj2,kk2))
+  phi_im2(6) = 0.5_rp*(PFM_phi(ii2-1,jj2,kk2)+PFM_phi(ii2-2,jj2,kk2))
+  phi_jp2(6) = 0.5_rp*(PFM_phi(ii2-1,jj2,kk2)+PFM_phi(ii2-1,jj2+1,kk2))
+  phi_jm2(6) = 0.5_rp*(PFM_phi(ii2-1,jj2,kk2)+PFM_phi(ii2-1,jj2-1,kk2))
+  phi_kp2(6) = 0.5_rp*(PFM_phi(ii2-1,jj2,kk2)+PFM_phi(ii2-1,jj2,kk2+1))
+  phi_km2(6) = 0.5_rp*(PFM_phi(ii2-1,jj2,kk2)+PFM_phi(ii2-1,jj2,kk2-1))
 
-  phi_ip2(7) = 0.*(PFM_phi(ii2+1,jj2,kk2)+PFM_phi(ii2+2,jj2,kk2))
-  phi_im2(7) = 0.*(PFM_phi(ii2+1,jj2,kk2)+PFM_phi(ii2,jj2,kk2))
-  phi_jp2(7) = 0.*(PFM_phi(ii2+1,jj2,kk2)+PFM_phi(ii2+1,jj2+1,kk2))
-  phi_jm2(7) = 0.*(PFM_phi(ii2+1,jj2,kk2)+PFM_phi(ii2+1,jj2-1,kk2))
-  phi_kp2(7) = 0.*(PFM_phi(ii2+1,jj2,kk2)+PFM_phi(ii2+1,jj2,kk2+1))
-  phi_km2(7) = 0.*(PFM_phi(ii2+1,jj2,kk2)+PFM_phi(ii2+1,jj2,kk2-1))
+  phi_ip2(7) = 0.5_rp*(PFM_phi(ii2+1,jj2,kk2)+PFM_phi(ii2+2,jj2,kk2))
+  phi_im2(7) = 0.5_rp*(PFM_phi(ii2+1,jj2,kk2)+PFM_phi(ii2,jj2,kk2))
+  phi_jp2(7) = 0.5_rp*(PFM_phi(ii2+1,jj2,kk2)+PFM_phi(ii2+1,jj2+1,kk2))
+  phi_jm2(7) = 0.5_rp*(PFM_phi(ii2+1,jj2,kk2)+PFM_phi(ii2+1,jj2-1,kk2))
+  phi_kp2(7) = 0.5_rp*(PFM_phi(ii2+1,jj2,kk2)+PFM_phi(ii2+1,jj2,kk2+1))
+  phi_km2(7) = 0.5_rp*(PFM_phi(ii2+1,jj2,kk2)+PFM_phi(ii2+1,jj2,kk2-1))
 
-
-dzi = 1./dzc(kkk)
+dzi = 1.0/dzc(kkk)
 
 ! Derivatives at AP
   do ii=1,7
@@ -1815,23 +1862,19 @@ dzi = 1./dzc(kkk)
     q1 =  max(WW1(ii) + q1, small)
     q2 =  max(WW2(ii) + q2, small)
   enddo
-
-
-
 ! Derivatives at IP1 and IP2
   do l = 1,7
-   dphidx1 = (1./q1)*(WW1(l)*phi_x1(l))+dphidx1
-   dphidy1 = (1./q1)*(WW1(l)*phi_y1(l))+dphidy1
-   dphidz1 = (1./q1)*(WW1(l)*phi_z1(l))+dphidz1
-   dphidx2 = (1./q2)*(WW2(l)*phi_x2(l))+dphidx2
-   dphidy2 = (1./q2)*(WW2(l)*phi_y2(l))+dphidy2
-   dphidz2 = (1./q2)*(WW2(l)*phi_z2(l))+dphidz2
+   dphidx1 = (1.0/q1)*(WW1(l)*phi_x1(l))+dphidx1
+   dphidy1 = (1.0/q1)*(WW1(l)*phi_y1(l))+dphidy1
+   dphidz1 = (1.0/q1)*(WW1(l)*phi_z1(l))+dphidz1
+   dphidx2 = (1.0/q2)*(WW2(l)*phi_x2(l))+dphidx2
+   dphidy2 = (1.0/q2)*(WW2(l)*phi_y2(l))+dphidy2
+   dphidz2 = (1.0/q2)*(WW2(l)*phi_z2(l))+dphidz2
   enddo
-
 ! Extrapolate to mirror point
-  dphidx = 2.*dphidx1-dphidx2
-  dphidy = 2.*dphidy1-dphidy2
-  dphidz = 2.*dphidz1-dphidz2
+  dphidx = 2.0_rp*dphidx1-dphidx2
+  dphidy = 2.0_rp*dphidy1-dphidy2
+  dphidz = 2.0_rp*dphidz1-dphidz2
 
 end subroutine interpolation_dphi
 #endif

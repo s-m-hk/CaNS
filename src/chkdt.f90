@@ -18,7 +18,7 @@ module mod_chkdt
   subroutine chkdt(n,dl,dzci,dzfi,visc,u,v,w,dtmax)
     !@cuf use cudafor
     !
-    ! computes maximum allowed timestep
+    ! computes maximum allowed time-step
     !
     implicit none
     integer , intent(in), dimension(3) :: n
@@ -34,38 +34,35 @@ module mod_chkdt
     real(rp), save :: dlmin
     logical , save :: is_first = .true.
     !
-    dxi = 1./dl(1)
-    dyi = 1./dl(2)
-    dzi = 1./dl(3)
+    dxi = 1._rp/dl(1)
+    dyi = 1._rp/dl(2)
+    dzi = 1._rp/dl(3)
     if(is_first) then ! calculate dlmin only once
       is_first = .false.
-      dlmin     = minval(dl(1:2))
+      dlmin    = minval(dl(1:2))
 #if !defined(_IMPDIFF_1D)
-      dlmin     = min(dlmin,minval(1./dzfi))
+      dlmin    = min(dlmin,minval(1._rp/dzfi))
 #endif
       call MPI_ALLREDUCE(MPI_IN_PLACE,dlmin,1,MPI_REAL_RP,MPI_MIN,MPI_COMM_WORLD,ierr)
     end if
     !
-    dti = 0.
+    dti = 0._rp
     !$acc data copy(dti) async(1)
     !$acc parallel loop collapse(3) default(present) private(ux,uy,uz,vx,vy,vz,wx,wy,wz,dtix,dtiy,dtiz) reduction(max:dti) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP SHARED(n,u,v,w,dxi,dyi,dzi,dzci,dzfi) &
-    !$OMP PRIVATE(ux,uy,uz,vx,vy,vz,wx,wy,wz,dtix,dtiy,dtiz) &
-    !$OMP REDUCTION(max:dti)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)  PRIVATE(ux,uy,uz,vx,vy,vz,wx,wy,wz,dtix,dtiy,dtiz) REDUCTION(max:dti)
     do k=1,n(3)
       do j=1,n(2)
         do i=1,n(1)
           ux = abs(u(i,j,k))
-          vx = 0.25*abs( v(i,j,k)+v(i,j-1,k)+v(i+1,j,k)+v(i+1,j-1,k) )
-          wx = 0.25*abs( w(i,j,k)+w(i,j,k-1)+w(i+1,j,k)+w(i+1,j,k-1) )
+          vx = 0.25_rp*abs( v(i,j,k)+v(i,j-1,k)+v(i+1,j,k)+v(i+1,j-1,k) )
+          wx = 0.25_rp*abs( w(i,j,k)+w(i,j,k-1)+w(i+1,j,k)+w(i+1,j,k-1) )
           dtix = ux*dxi+vx*dyi+wx*dzfi(k)
-          uy = 0.25*abs( u(i,j,k)+u(i,j+1,k)+u(i-1,j+1,k)+u(i-1,j,k) )
+          uy = 0.25_rp*abs( u(i,j,k)+u(i,j+1,k)+u(i-1,j+1,k)+u(i-1,j,k) )
           vy = abs(v(i,j,k))
-          wy = 0.25*abs( w(i,j,k)+w(i,j+1,k)+w(i,j+1,k-1)+w(i,j,k-1) )
+          wy = 0.25_rp*abs( w(i,j,k)+w(i,j+1,k)+w(i,j+1,k-1)+w(i,j,k-1) )
           dtiy = uy*dxi+vy*dyi+wy*dzfi(k)
-          uz = 0.25*abs( u(i,j,k)+u(i-1,j,k)+u(i-1,j,k+1)+u(i,j,k+1) )
-          vz = 0.25*abs( v(i,j,k)+v(i,j-1,k)+v(i,j-1,k+1)+v(i,j,k+1) )
+          uz = 0.25_rp*abs( u(i,j,k)+u(i-1,j,k)+u(i-1,j,k+1)+u(i,j,k+1) )
+          vz = 0.25_rp*abs( v(i,j,k)+v(i,j-1,k)+v(i,j-1,k+1)+v(i,j,k+1) )
           wz = abs(w(i,j,k))
           dtiz = uz*dxi+vz*dyi+wz*dzci(k)
           dti = max(dti,dtix,dtiy,dtiz)
@@ -75,16 +72,16 @@ module mod_chkdt
     !$acc end data
     !$acc wait(1)
     call MPI_ALLREDUCE(MPI_IN_PLACE,dti,1,MPI_REAL_RP,MPI_MAX,MPI_COMM_WORLD,ierr)
-    if(dti == 0.) dti = 1.
+    if(dti == 0._rp) dti = 1._rp
 #if defined(_IMPDIFF) && !defined(_IMPDIFF_1D)
-    dtmax = sqrt(3.)/dti
+    dtmax = sqrt(3._rp)/dti
 #else
-    dtmax = min(1.65/12./visc*dlmin**2,sqrt(3.)/dti)
-#endif
+    dtmax = min(1.65_rp/12._rp/visc*dlmin**2,sqrt(3._rp)/dti)
 #if defined(_HEAT_TRANSFER)
-    dthf   = 1.65/12./alph_f*dlmin**2
-    dths   = 1.65/12./alph_s*dlmin**2
-    dtmax  = min(dtmax,dthf,dthf)
+    dthf   = 1.65_rp/12._rp/alph_f*dlmin**2
+    dths   = 1.65_rp/12._rp/alph_s*dlmin**2
+    dtmax  = min(dtmax,dthf,dths)
+#endif
 #endif
   end subroutine chkdt
 end module mod_chkdt

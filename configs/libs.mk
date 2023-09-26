@@ -10,14 +10,21 @@ ifeq ($(strip $(USE_NVTX)),1)
 override LIBS += -L$(NVHPC_ROOT)/cuda/lib64 -lnvToolsExt
 endif
 
-ifeq ($(strip $(FCOMP)),GNU)
-override LIBS += -L/lscratch/smhk2/Software/AMD/amd-fftw/lib
+#ifeq ($(strip $(FCOMP)),GNU)
+#override LIBS += -L/lscratch/smhk2/Software/AMD/amd-fftw/lib
+#endif
+#ifeq ($(strip $(FCOMP)),INTEL)
+#override LIBS += -L/scratch/smhk2/Software/fftw-intel/lib
+#endif
+#ifeq ($(strip $(FCOMP)),NVIDIA)
+#override LIBS += -L$(NVHPC_ROOT)/math_libs/lib64
+#endif
+
+ifeq ($(strip $(HDF5)),1)
+ifeq ($(strip $(GPU)),1)
+override INCS += -I/lscratch/smhk2/Software/HDF5_NV/include
+override LIBS += -L/lscratch/smhk2/Software/HDF5_NV/lib -lhdf5 -lhdf5_fortran
 endif
-ifeq ($(strip $(FCOMP)),INTEL)
-override LIBS += -L/scratch/smhk2/Software/fftw-intel/lib
-endif
-ifeq ($(strip $(FCOMP)),NVIDIA)
-override LIBS += -L$(NVHPC_ROOT)/math_libs/lib64
 endif
 
 ifneq ($(strip $(GPU)),1)
@@ -42,5 +49,3 @@ endif
 endif
 
 endif
-
-LIBS += -lm -ldl

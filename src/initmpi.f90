@@ -11,6 +11,7 @@ module mod_initmpi
   use mod_types
   !@acc use openacc
   !@acc use cudecomp
+  !@cuf use cudafor, only: cudaGetDeviceCount,cudaSetDevice
 #if defined(_OPENACC)
   use mod_common_cudecomp, only: cudecomp_real_rp,cudecomp_real_gp, &
                                  ch => handle,gd => gd_halo,gd_halo_scal,gd_poi, &
@@ -49,9 +50,9 @@ module mod_initmpi
     where(bc(0,:)//bc(1,:) == 'PP') periods(:) = .true.
     !
 #if defined(_OPENACC)
-    dev_type = acc_get_device_type()
     call MPI_COMM_SPLIT_TYPE(MPI_COMM_WORLD,MPI_COMM_TYPE_SHARED,0,MPI_INFO_NULL,local_comm,ierr)
     call MPI_COMM_RANK(local_comm,mydev,ierr)
+    dev_type = acc_get_device_type()
 #if 1
     istat = cudaGetDeviceCount(ndev)      ! may be tweaked with environment variable CUDA_VISIBLE_DEVICES
     mydev = mod(mydev,ndev)
@@ -129,20 +130,13 @@ module mod_initmpi
       cudecomp_real_rp = CUDECOMP_FLOAT
     end if
     istat = cudecompGridDescAutotuneOptionsSetDefaults(atune_conf)
-#if defined(_WENO)
     atune_conf%halo_extents(:) = 3
-#else
-    atune_conf%halo_extents(:) = 1
-#endif
     atune_conf%halo_periods(:) = periods(:)
     atune_conf%dtype = cudecomp_real_rp
     atune_conf%autotune_halo_backend = cudecomp_is_h_comm_autotune
     atune_conf%disable_nccl_backends    = .not.cudecomp_is_t_enable_nccl
     atune_conf%disable_nvshmem_backends = .not.cudecomp_is_t_enable_nvshmem
     if(all(conf_poi%transpose_comm_backend /= [CUDECOMP_TRANSPOSE_COMM_NVSHMEM,CUDECOMP_TRANSPOSE_COMM_NVSHMEM_PL])) then
-      !
-      ! disable NVSHMEM halo backend autotuning when NVSHMEM is NOT used for transposes
-      !
       atune_conf%disable_nvshmem_backends = .true.
     end if
     istat = cudecompGridDescCreate(ch,gd_halo_scal,conf,atune_conf)

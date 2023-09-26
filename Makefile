@@ -96,7 +96,7 @@ $(foreach dep, $(OBJS), $(eval $(dep): $($(dep))))
 
 # Cleanup, filter to avoid removing source code by accident
 clean:
-	$(RM) $(SRCS_DIR)/*.{i,mod,smod,d,o} $(EXE) $(DEPS)
+	$(RM) $(ROOT_DIR)/*.{i,mod,smod,d,o} $(SRCS_DIR)/*.{i,mod,smod,d,o} $(EXE) $(DEPS)
 
 allclean:
 	@make libsclean

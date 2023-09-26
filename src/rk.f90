@@ -16,10 +16,11 @@ module mod_rk
 #if defined(_FAST_MOM_KERNELS)
   use mod_mom    ,  only: mom_xyz_ad
 #endif
-  use mod_scal   ,  only: scal
+  use mod_scal   ,  only: scal,cmpt_scalflux
   use mod_source ,  only: grav_src
 #if defined(_IBM)
   use mod_forcing,  only: force_vel,  &
+                          bulk_mean_ibm, &
 #if defined(_HEAT_TRANSFER)
                           force_scal, &
 #endif
@@ -29,13 +30,18 @@ module mod_rk
   use mod_utils,      only: bulk_mean,swap
   use mod_types
   implicit none
+#if defined(_SINGLE_PRECISION)
+  real(rp), parameter :: eps = 1.e-8_rp
+#else
+  real(rp), parameter :: eps = 1.e-16_rp
+#endif
   private
   public rk,rk_scal
   contains
-  subroutine rk(rkpar,n,nh_s,dli,l,zc,zf,dzci,dzfi,grid_vol_ratio_c,grid_vol_ratio_f,visc,dt,p, &
+  subroutine rk(rkpar,n,nh_v,nh_s,dli,l,zc,zf,dzci,dzfi,grid_vol_ratio_c,grid_vol_ratio_f,visc,dt,p, &
                 is_bound,is_forced,velf,bforce,tauxo,tauyo,tauzo,u,v,w, &
-#if defined(_IBM)
                 dl,dzc,dzf, &
+#if defined(_IBM)
                 psi_s,psi_u,psi_v,psi_w, &
                 fibm, &
 #endif
@@ -54,18 +60,20 @@ module mod_rk
     logical , parameter :: is_cmpt_wallshear = .false.
     real(rp), intent(in   ), dimension(2) :: rkpar
     integer , intent(in   ), dimension(3) :: n
-    integer , intent(in   )               :: nh_s
+    integer , intent(in   )               :: nh_v,nh_s
     real(rp), intent(in   )               :: visc,dt
     real(rp), intent(in   ), dimension(3) :: dli,l
-#if defined(_IBM)
     real(rp), intent(in   ), dimension(3)  :: dl
     real(rp), intent(in   ), dimension(0:) :: dzc,dzf
-#endif
     real(rp), intent(in   ), dimension(0:) :: zc,zf,dzci,dzfi
     real(rp), intent(in   ), dimension(0:) :: grid_vol_ratio_c,grid_vol_ratio_f
     real(rp), intent(in   ), dimension(0:,0:,0:) :: p
     logical , intent(in   ), dimension(0:1,3)    :: is_bound
+#if defined(_HEAT_TRANSFER)
+    logical , intent(in   ), dimension(4)        :: is_forced
+#else
     logical , intent(in   ), dimension(3)        :: is_forced
+#endif
     real(rp), intent(in   ), dimension(3)        :: velf,bforce
     real(rp), intent(inout), dimension(3) :: tauxo,tauyo,tauzo
     real(rp), intent(inout), dimension(0:,0:,0:) :: u,v,w
@@ -104,9 +112,9 @@ module mod_rk
       !$acc enter data create(dudtrk_t ,dvdtrk_t ,dwdtrk_t ) async(1)
       !$acc enter data create(dudtrko_t,dvdtrko_t,dwdtrko_t) async(1)
       !$acc kernels default(present) async(1) ! not really necessary
-      dudtrko_t(:,:,:) = 0._rp
-      dvdtrko_t(:,:,:) = 0._rp
-      dwdtrko_t(:,:,:) = 0._rp
+      dudtrko_t(:,:,:) = 0.0_rp
+      dvdtrko_t(:,:,:) = 0.0_rp
+      dwdtrko_t(:,:,:) = 0.0_rp
       !$acc end kernels
 #if defined(_IMPDIFF)
       allocate(dudtrkd(n(1),n(2),n(3)),dvdtrkd(n(1),n(2),n(3)),dwdtrkd(n(1),n(2),n(3)))
@@ -120,25 +128,6 @@ module mod_rk
       dwdtrko => dwdtrko_t
     end if
     !
-    ! compute mean wall shear stresses
-    ! (useful to check global momentum balance for certain wall flows, can be (de)activated above)
-    !
-    if(is_cmpt_wallshear) then
-      call cmpt_wallshear(n,is_bound,l,dli,dzci,dzfi,visc,u,v,w,taux,tauy,tauz)
-#if !defined(_IMPDIFF)
-      f(1) = (factor1*sum(taux(:)/l(:)) + factor2*sum(tauxo(:)/l(:)))
-      f(2) = (factor1*sum(tauy(:)/l(:)) + factor2*sum(tauyo(:)/l(:)))
-      f(3) = (factor1*sum(tauz(:)/l(:)) + factor2*sum(tauzo(:)/l(:)))
-      tauxo(:) = taux(:)
-      tauyo(:) = tauy(:)
-      tauzo(:) = tauz(:)
-#else
-      f(1:3) = factor12*[sum(taux(:)/l(:)), &
-                         sum(tauy(:)/l(:)), &
-                         sum(tauz(:)/l(:))]
-#endif
-    end if
-    !
 #if defined(_FAST_MOM_KERNELS)
     call mom_xyz_ad(n(1),n(2),n(3),dli(1),dli(2),dzci,dzfi,visc,u,v,w,dudtrk,dvdtrk,dwdtrk,dudtrkd,dvdtrkd,dwdtrkd &
 #if defined(_IBM) && defined(_SIMPLE)
@@ -148,9 +137,9 @@ module mod_rk
 #else
     !$acc kernels default(present) async(1)
     !$OMP PARALLEL WORKSHARE
-    dudtrk(:,:,:) = 0._rp
-    dvdtrk(:,:,:) = 0._rp
-    dwdtrk(:,:,:) = 0._rp
+    dudtrk(:,:,:) = 0.0_rp
+    dvdtrk(:,:,:) = 0.0_rp
+    dwdtrk(:,:,:) = 0.0_rp
     !$OMP END PARALLEL WORKSHARE
     !$acc end kernels
 #if !defined(_IMPDIFF)
@@ -172,9 +161,9 @@ module mod_rk
 #else
     !$acc kernels default(present) async(1)
     !$OMP PARALLEL WORKSHARE
-    dudtrkd(:,:,:) = 0._rp
-    dvdtrkd(:,:,:) = 0._rp
-    dwdtrkd(:,:,:) = 0._rp
+    dudtrkd(:,:,:) = 0.0_rp
+    dvdtrkd(:,:,:) = 0.0_rp
+    dwdtrkd(:,:,:) = 0.0_rp
     !$OMP END PARALLEL WORKSHARE
     !$acc end kernels
 #if !defined(_IMPDIFF_1D)
@@ -221,8 +210,7 @@ module mod_rk
 #endif
     !
     !$acc parallel loop collapse(3) default(present) async(1)
-    !$OMP PARALLEL DO DEFAULT(shared) &
-    !$OMP SHARED(n,factor1,factor2,u,v,w,dudtrk,dvdtrk,dwdtrk,dudtrko,dvdtrko,dwdtrko)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)
     do k=1,n(3)
       do j=1,n(2)
         do i=1,n(1)
@@ -266,8 +254,7 @@ module mod_rk
 !    call momy_p(n(1),n(2),n(3),dli(2),bforce(2),p,dvdtrk)
 !    call momz_p(n(1),n(2),n(3),dzci  ,bforce(3),p,dwdtrk)
 !    !$acc parallel loop collapse(3)
-!    !$OMP PARALLEL DO DEFAULT(none) &
-!    !$OMP SHARED(n,factor12,u,v,w,dudtrk,dvdtrk,dwdtrk)
+!    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)
 !    do k=1,n(3)
 !      do j=1,n(2)
 !        do i=1,n(1)
@@ -280,9 +267,7 @@ module mod_rk
 !#endif
 #if !defined(_FAST_MOM_KERNELS)
     !$acc parallel loop collapse(3) default(present) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP SHARED(bforce,dxi,dyi,dzci) &
-    !$OMP SHARED(n,factor12,u,v,w,p)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)
     do k=1,n(3)
       do j=1,n(2)
         do i=1,n(1)
@@ -295,14 +280,211 @@ module mod_rk
 #endif
     !
     call grav_src(n(1),n(2),n(3), &
+                  factor12, &
 #if defined(_HEAT_TRANSFER)
                   nh_s,s, &
 #endif
-                  dudtrk,dvdtrk,dwdtrk)
+                  u,v,w)
+    !
+    ! compute bulk velocity forcing
+    !
+    call cmpt_bulk_forcing(n,l,dl,dzf,dzc,is_forced,velf,grid_vol_ratio_c,grid_vol_ratio_f,&
+#if defined(_IBM)
+                           psi_u,psi_v,psi_w,&
+#endif
+                           u,v,w,f)
+#if defined(_IBM)
+    !
+    ! IBM forcing
+    !
+  call force_vel(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fibm)
+#endif
+#if defined(_IMPDIFF)
+    !
+    ! compute rhs of helmholtz equation
+    !
+    !$acc parallel loop collapse(3) default(present) async(1)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)
+    do k=1,n(3)
+      do j=1,n(2)
+        do i=1,n(1)
+          u(i,j,k) = u(i,j,k) - 0.5_rp*factor12*dudtrkd(i,j,k)
+          v(i,j,k) = v(i,j,k) - 0.5_rp*factor12*dvdtrkd(i,j,k)
+          w(i,j,k) = w(i,j,k) - 0.5_rp*factor12*dwdtrkd(i,j,k)
+        end do
+      end do
+    end do
+#endif
+  end subroutine rk
+  subroutine rk_scal(rkpar,n,nh_v,nh_s,dli,zc,zf,dzci,dzfi,grid_vol_ratio_f,dt,l,u,v,w,alph_f,is_forced,velf, &
+                     dl,dzc,dzf, &
+#if defined(_IBM)
+                     alph_s,al, &
+                     psi_s,psi_u, &
+#if defined(_VOLUME) && defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
+                     fibm, &
+#endif
+#endif
+                     s,f)
+    !
+    ! low-storage 3rd-order Runge-Kutta scheme
+    ! for time integration of the scalar field.
+    !
+    implicit none
+    real(rp), intent(in   ), dimension(2)  :: rkpar
+    integer , intent(in   ), dimension(3)  :: n
+    integer , intent(in   )                :: nh_v,nh_s
+    real(rp), intent(in   ), dimension(3)  :: dli,l
+    real(rp), intent(in   ), dimension(0:) :: zc,zf,dzci,dzfi
+    real(rp), intent(in   ), dimension(0:) :: grid_vol_ratio_f
+    real(rp), intent(inout), dimension(4)  :: f
+#if defined(_HEAT_TRANSFER)
+    logical , intent(in   ), dimension(4)        :: is_forced
+#else
+    logical , intent(in   ), dimension(3)        :: is_forced
+#endif
+    real(rp), intent(in   ), dimension(3)  :: velf
+    real(rp), intent(in   ), dimension(3)  :: dl
+    real(rp), intent(in   ), dimension(0:) :: dzc,dzf
+    real(rp), intent(in   ) :: alph_f,dt
+    real(rp), intent(in   ), dimension(0:,0:,0:) :: u,v,w
+    real(rp), intent(inout), dimension(1-nh_s:,1-nh_s:,1-nh_s:) :: s
+    real(rp), target     , allocatable, dimension(:,:,:), save :: dsdtrk_t, dsdtrko_t
+    real(rp), pointer    , contiguous , dimension(:,:,:), save :: dsdtrk, dsdtrko
+#if defined(_IMPDIFF)
+    real(rp),              allocatable, dimension(:,:,:), save :: dsdtrkd
+#endif
+    real(rp) :: factor1,factor2,factor12
+#if defined(_IBM)
+    real(rp), intent(in   ) :: alph_s
+    real(rp), intent(in   ), dimension(0:,0:,0:) :: al
+    real(rp), intent(in   ), dimension(0:,0:,0:) :: psi_s,psi_u
+#if defined(_VOLUME) && defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
+    real(rp), intent(out  ), dimension(4) :: fibm
+#endif
+#endif
+    real(rp) :: mean,ssource
+    integer :: i,j,k
+    logical, save :: is_first = .true.
+    !
+    factor1 = rkpar(1)*dt
+    factor2 = rkpar(2)*dt
+    factor12 = factor1 + factor2
+    !
+    ! initialization
+    !
+    if(is_first) then ! leverage save attribute to allocate these arrays on the device only once
+      is_first = .false.
+      allocate(dsdtrk_t(n(1),n(2),n(3)),dsdtrko_t(n(1),n(2),n(3)))
+      !$acc enter data create(dsdtrk_t, dsdtrko_t) async(1)
+      !$acc kernels default(present) async(1)
+      dsdtrk_t(:,:,:)  = 0.0_rp
+      dsdtrko_t(:,:,:) = 0.0_rp
+      !$acc end kernels
+      dsdtrk  => dsdtrk_t
+      dsdtrko => dsdtrko_t
+#if defined(_IMPDIFF)
+      allocate(dsdtrkd(n(1),n(2),n(3)))
+      !$acc enter data create(dsdtrkd) async(1)
+#endif
+    end if
+    ! if(is_cmpt_wallflux) then
+      ! call cmpt_scalflux(n,is_bound,l,dli,dzci,dzfi,alpha,flux)
+      ! f = (factor1*sum(flux(:)/l(:)) + factor2*sum(fluxo(:)/l(:)))
+      ! fluxo(:) = flux(:)
+    ! end if
+    call scal(n(1),n(2),n(3),dli(1),dli(2),dli(3),dzci,dzfi,alph_f, &
+#if defined(_IBM)
+              al,psi_s, &
+#endif
+              u,v,w,s, &
+#if defined(_IMPDIFF)
+              dsdtrkd, &
+#endif
+              dsdtrk)
+#if defined(_HEAT_SOURCE) && !defined(_IBM)
+    ! call bulk_mean(n,nh_v,grid_vol_ratio_f,u,mean)
+#elif defined(_HEAT_SOURCE) && defined(_IBM)
+    ! call bulk_mean_ibm(n,dl,dzf,psi_u,u,mean)
+#endif
+    !$acc parallel loop collapse(3) default(present) async(1)
+    !$OMP PARALLEL DO COLLAPSE(3) DEFAULT(shared)
+    do k=1,n(3)
+      do j=1,n(2)
+        do i=1,n(1)
+#if defined(_HEAT_SOURCE)
+          ssource  = 0.5_rp*(u(i-1,j,k) + u(i,j,k))
+#else
+          ssource  = 0.0_rp
+#endif
+          s(i,j,k) = s(i,j,k) + factor1*dsdtrk(i,j,k) + factor2*dsdtrko(i,j,k) + factor12*ssource
+#if defined(_IMPDIFF)
+          s(i,j,k) = s(i,j,k) + factor12*dsdtrkd(i,j,k)
+#endif
+        end do
+      end do
+    end do
+    !
+    ! swap dsdtrk <-> dsdtrko
+    !
+    call swap(dsdtrk,dsdtrko)
+    !
+    ! Maintain a constant bulk temperature
+    !
+#if !defined(_IBM)
+    if(is_forced(4)) then
+      call bulk_mean(n,nh_s,grid_vol_ratio_f,s,mean)
+      f(4) = velf(4) - mean
+    end if
+#else
+    if(is_forced(4)) then
+      call force_bulk_vel(n,nh_s,dl,dzc,l,psi_s,s,velf(4),f(4))
+    endif
+#endif
+#if defined(_IBM) && defined(_VOLUME) && defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
+    !
+    ! Volume penalization to impose isothermal conditions
+    !
+    call force_scal(n,nh_s,dl,dzf,l,psi_s,s,fibm)
+#endif
+#if defined(_IMPDIFF)
+    !
+    ! compute rhs of helmholtz equation
+    !
+    !$acc parallel loop collapse(3) default(present) async(1)
+    !$OMP PARALLEL DO COLLAPSE(3) DEFAULT(shared)
+    do k=1,n(3)
+      do j=1,n(2)
+        do i=1,n(1)
+          s(i,j,k) = s(i,j,k) - 0.5_rp*factor12*dsdtrkd(i,j,k)
+        end do
+      end do
+    end do
+#endif
+  end subroutine rk_scal
+  !
+  subroutine cmpt_bulk_forcing(n,l,dl,dzf,dzc,is_forced,velf,grid_vol_ratio_c,grid_vol_ratio_f,&
+#if defined(_IBM)
+                               psi_u,psi_v,psi_w,&
+#endif
+                               u,v,w,f)
+    implicit none
+    integer , intent(in   ), dimension(3)  :: n
+    real(rp), intent(in   ), dimension(3)  :: l,dl
+    real(rp), intent(in   ), dimension(0:) :: dzc,dzf
+    logical , intent(in   ), dimension(3)  :: is_forced
+    real(rp), intent(in   ), dimension(3)  :: velf
+    real(rp), intent(in   ), dimension(0:) :: grid_vol_ratio_c,grid_vol_ratio_f
+#if defined(_IBM)
+    real(rp), intent(in), dimension(0:,0:,0:) :: psi_u,psi_v,psi_w
+#endif
+    real(rp), intent(inout), dimension(0:,0:,0:) :: u,v,w
+    real(rp), intent(out  ), dimension(3) :: f
+    real(rp) :: mean
     !
     ! bulk velocity forcing
     !
-    f(1:3) = 0._rp
+    f(1:3) = 0.0_rp
 #if !defined(_IBM)
     if(is_forced(1)) then
       call bulk_mean(n,1,grid_vol_ratio_c,u,mean)
@@ -318,136 +500,80 @@ module mod_rk
     end if
 #else
     if(is_forced(1)) then
-      call force_bulk_vel(n,1,zc,zf,dl,dzc,l,psi_u,u,velf(1),f(1))
+      call force_bulk_vel(n,1,dl,dzf,l,psi_u,u,velf(1),f(1))
     endif
     if(is_forced(2)) then
-      call force_bulk_vel(n,1,zc,zf,dl,dzc,l,psi_v,v,velf(2),f(2))
+      call force_bulk_vel(n,1,dl,dzf,l,psi_v,v,velf(2),f(2))
     endif
     if(is_forced(3)) then
-      call force_bulk_vel(n,1,zc,zf,dl,dzc,l,psi_w,w,velf(3),f(3))
+      call force_bulk_vel(n,1,dl,dzc,l,psi_w,w,velf(3),f(3))
     endif
 #endif
-#if defined(_IBM)
+  end subroutine cmpt_bulk_forcing
+  !
+  subroutine cmpt_bulk_forcing_alternative(rkpar,n,dli,l,dzci,dzfi,visc,dt,is_bound,is_forced,u,v,w,tauxo,tauyo,tauzo,f,is_first)
     !
-    ! IBM forcing
-    !
-  call force_vel(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fibm)
-#endif
-#if defined(_IMPDIFF)
-    !
-    ! compute rhs of helmholtz equation
-    !
-    !$acc parallel loop collapse(3) default(present) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP SHARED(n,factor12,u,v,w,dudtrkd,dvdtrkd,dwdtrkd)
-    do k=1,n(3)
-      do j=1,n(2)
-        do i=1,n(1)
-          u(i,j,k) = u(i,j,k) - .5_rp*factor12*dudtrkd(i,j,k)
-          v(i,j,k) = v(i,j,k) - .5_rp*factor12*dvdtrkd(i,j,k)
-          w(i,j,k) = w(i,j,k) - .5_rp*factor12*dwdtrkd(i,j,k)
-        end do
-      end do
-    end do
-#endif
-  end subroutine rk
-  subroutine rk_scal(rkpar,n,nh_s,dli,zc,zf,dzci,dzfi,grid_vol_ratio_f,dt,l,u,v,w,alph_f,is_forced,velf, &
-#if defined(_IBM)
-                     alph_s,al, &
-                     dl,dzc,dzf, &
-                     psi_s, &
-#if defined(_VOLUME) && defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
-                     fibm, &
-#endif
-#endif
-                     s,f)
-    !
-    ! low-storage 3rd-order Runge-Kutta scheme
-    ! for time integration of the scalar field.
+    ! computes the pressure gradient to be added to the flow that perfectly balances the wall shear stresses
+    ! this effectively prescribes zero net acceleration, which allows to sustain a constant mass flux
     !
     implicit none
-    real(rp), intent(in   ), dimension(2)  :: rkpar
-    integer , intent(in   ), dimension(3)  :: n
-    integer , intent(in   )                :: nh_s
-    real(rp), intent(in   ), dimension(3)  :: dli,l
-    real(rp), intent(in   ), dimension(0:) :: zc,zf,dzci,dzfi
-    real(rp), intent(in   ), dimension(0:) :: grid_vol_ratio_f
-    real(rp), intent(out  ), dimension(4)  :: f
-    logical , intent(in   ), dimension(3)  :: is_forced
-    real(rp), intent(in   ), dimension(3)  :: velf
-#if defined(_IBM)
-    real(rp), intent(in   ), dimension(3)  :: dl
-    real(rp), intent(in   ), dimension(0:) :: dzc,dzf
-#endif
-    real(rp), intent(in   ) :: alph_f,dt
+    real(rp), intent(in), dimension(2) :: rkpar
+    integer , intent(in), dimension(3) :: n
+    real(rp), intent(in) :: visc,dt
+    real(rp), intent(in   ), dimension(3) :: dli,l
+    real(rp), intent(in   ), dimension(0:) :: dzci,dzfi
+    logical , intent(in   ), dimension(0:1,3)    :: is_bound
+    logical , intent(in   ), dimension(3) :: is_forced
     real(rp), intent(in   ), dimension(0:,0:,0:) :: u,v,w
-    real(rp), intent(inout), dimension(1-nh_s:,1-nh_s:,1-nh_s:) :: s
-    real(rp), target     , allocatable, dimension(:,:,:), save :: dsdtrk_t, dsdtrko_t
-    real(rp), pointer    , contiguous , dimension(:,:,:), save :: dsdtrk, dsdtrko
-    real(rp) :: factor1,factor2
-#if defined(_IBM)
-    real(rp), intent(in   ) :: alph_s
-    real(rp), intent(in   ), dimension(0:,0:,0:) :: al
-    real(rp), intent(in   ), dimension(0:,0:,0:) :: psi_s
-#if defined(_VOLUME) && defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
-    real(rp), intent(out  ), dimension(4) :: fibm
-#endif
-#endif
-    real(rp) :: mean
-    integer :: i,j,k
-    logical, save :: is_first = .true.
+    real(rp), intent(inout), dimension(3) :: tauxo,tauyo,tauzo
+    real(rp), intent(inout), dimension(3) :: f
+    real(rp), dimension(3) :: f_aux
+    logical , intent(in   ) :: is_first
+    real(rp), dimension(3) :: taux,tauy,tauz
+    real(rp) :: factor1,factor2,factor12
     !
     factor1 = rkpar(1)*dt
     factor2 = rkpar(2)*dt
+    factor12 = (factor1 + factor2)/2.
     !
-    ! initialization
-    !
-    if(is_first) then ! leverage save attribute to allocate these arrays on the device only once
-      is_first = .false.
-      allocate(dsdtrk_t(n(1),n(2),n(3)),dsdtrko_t(n(1),n(2),n(3)))
-      !$acc enter data create(dsdtrk_t, dsdtrko_t) async(1)
-      !$acc kernels default(present) async(1)
-      dsdtrko_t(:,:,:) = 0._rp
-      !$acc end kernels
-      dsdtrk  => dsdtrk_t
-      dsdtrko => dsdtrko_t
-    end if
-    !
-    call scal(n(1),n(2),n(3),dli(1),dli(2),dli(3),nh_s,dzci,dzfi,alph_f, &
-#if defined(_IBM)
-              alph_s,al,psi_s, &
-#endif
-              u,v,w,s,dsdtrk)
-    !$acc parallel loop collapse(3) default(present) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP SHARED(n,factor1,factor2,s,dsdtrk,dsdtrko)
-    do k=1,n(3)
-      do j=1,n(2)
-        do i=1,n(1)
-          s(i,j,k) = s(i,j,k) + factor1*dsdtrk(i,j,k) + factor2*dsdtrko(i,j,k)
-        end do
-      end do
-    end do
-    call swap(dsdtrk,dsdtrko)
-    !
-    ! source term
-    !
-    f(4) = 0._rp
-#if !defined(_IBM)
-    if(is_forced(4)) then
-      call bulk_mean(n,nh_s,grid_vol_ratio_f,s,mean)
-      f(4) = velf(4) - mean
+    taux(:) = 0._rp
+    tauy(:) = 0._rp
+    tauz(:) = 0._rp
+    call cmpt_wallshear(n,is_forced,is_bound,l,dli,dzci,dzfi,visc,u,v,w,taux,tauy,tauz)
+#if !defined(_IMPDIFF)
+    if(is_first) then
+      f(1) = (factor1*sum(taux(:)/l(:)) + factor2*sum(tauxo(:)/l(:)))
+      f(2) = (factor1*sum(tauy(:)/l(:)) + factor2*sum(tauyo(:)/l(:)))
+      f(3) = (factor1*sum(tauz(:)/l(:)) + factor2*sum(tauzo(:)/l(:)))
+      tauxo(:) = taux(:)
+      tauyo(:) = tauy(:)
+      tauzo(:) = tauz(:)
     end if
 #else
-    if(is_forced(4)) then
-      call force_bulk_vel(n,nh_s,zc,zf,dl,dzc,l,psi_s,s,velf(4),f(4))
+#if defined(_IMPDIFF_1D)
+    f_aux(1) = factor12*taux(3)/l(3)
+    f_aux(2) = factor12*tauy(3)/l(3)
+    if(is_first) then
+      f(1) = factor1*taux(2)/l(2) + factor2*tauxo(2)/l(2) + f_aux(1)
+      f(2) = factor1*tauy(1)/l(1) + factor2*tauyo(1)/l(1) + f_aux(2)
+      f(3) = factor1*sum(tauz(1:2)/l(1:2)) + factor2*sum(tauzo(1:2)/l(1:2))
+      tauxo(1:2) = taux(1:2)
+      tauyo(1:2) = tauy(1:2)
+      tauzo(1:2) = tauz(1:2)
+    else
+      f(1) = f(1) + f_aux(1)
+      f(2) = f(2) + f_aux(2)
+    end if
+#else
+    f_aux(:) = factor12*[sum(taux(:)/l(:)), &
+                         sum(tauy(:)/l(:)), &
+                         sum(tauz(:)/l(:))]
+    if(is_first) then
+       f(:) = f_aux(:)
+    else
+       f(:) = f(:) + f_aux(:)
     endif
 #endif
-#if defined(_IBM) && defined(_VOLUME) && defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
-    !
-    ! IBM forcing
-    !
-    call force_scal(n,nh_s,dl,dzf,l,psi_s,s,fibm)
 #endif
-  end subroutine rk_scal
+  end subroutine cmpt_bulk_forcing_alternative
 end module mod_rk

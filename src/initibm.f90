@@ -9,7 +9,7 @@ use mod_IBM, only: IBM_Mask, normal_vectors,intersect,mirrorpoints, &
                    mirrorpoints_ijk, interpolation_mirror,InterpolationWeights
 #endif
 use mod_bound, only: bounduvw,boundp
-use mod_load
+use mod_load,  only: load_all,load_one
 use mod_param, only: datadir
 use mod_common_mpi, only: myid
 use mod_types
@@ -43,37 +43,37 @@ nx = n(1)
 ny = n(2)
 nz = n(3)
 !
-cell_u_tag(:,:,:)    = 0._rp
-cell_v_tag(:,:,:)    = 0._rp
-cell_w_tag(:,:,:)    = 0._rp
-cell_phi_tag(:,:,:)  = 0._rp
+cell_u_tag(:,:,:)    = 0.0_rp
+cell_v_tag(:,:,:)    = 0.0_rp
+cell_w_tag(:,:,:)    = 0.0_rp
+cell_phi_tag(:,:,:)  = 0.0_rp
 !
 inquire(file=trim(datadir)//'IBM.bin',exist=is_data)
 
 if (.not.is_data) then
-   !$acc enter data copyin(cell_phi_tag)
    call IBM_mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,cell_phi_tag)
+   !$acc enter data copyin(cell_phi_tag)
    call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
    !
    do k=0,nz
     do j=0,ny
      do i=0,nx
-     if((cell_phi_tag(i,j,k) + cell_phi_tag(i+1,j,k)) > 0.5_rp) cell_u_tag(i,j,k) = 1._rp
-     if((cell_phi_tag(i,j,k) + cell_phi_tag(i,j+1,k)) > 0.5_rp) cell_v_tag(i,j,k) = 1._rp
-     if((cell_phi_tag(i,j,k) + cell_phi_tag(i,j,k+1)) > 0.5_rp) cell_w_tag(i,j,k) = 1._rp
+     if((cell_phi_tag(i,j,k) + cell_phi_tag(i+1,j,k)) > 0.5_rp) cell_u_tag(i,j,k) = 1.0_rp
+     if((cell_phi_tag(i,j,k) + cell_phi_tag(i,j+1,k)) > 0.5_rp) cell_v_tag(i,j,k) = 1.0_rp
+     if((cell_phi_tag(i,j,k) + cell_phi_tag(i,j,k+1)) > 0.5_rp) cell_w_tag(i,j,k) = 1.0_rp
      enddo
     enddo
    enddo
    !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag)
    call bounduvw(cbcvel,n,nh,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
    !
-   dummy_time = 0.; dummy_istep = 0
+   dummy_time = 0.0_rp; dummy_istep = 0
    !$acc update self(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
-   call load('w',trim(datadir)//'IBM.bin',MPI_COMM_WORLD,ng,[1,1,1],lo,hi,dummy_time,dummy_istep,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
+   call load_all('w',trim(datadir)//'IBM.bin',MPI_COMM_WORLD,ng,[1,1,1],lo,hi,dummy_time,dummy_istep,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
 else
-   call load('r',trim(datadir)//'IBM.bin',MPI_COMM_WORLD,ng,[1,1,1],lo,hi,dummy_time,dummy_istep,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
+   call load_all('r',trim(datadir)//'IBM.bin',MPI_COMM_WORLD,ng,[1,1,1],lo,hi,dummy_time,dummy_istep,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
    !
-   !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
+   !$acc enter data copyin(cell_phi_tag,cell_u_tag,cell_v_tag,cell_w_tag)
     call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
     call bounduvw(cbcvel,n,nh,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
   if (myid == 0)  print*, '*** Saved IBM data loaded ***'
@@ -129,10 +129,10 @@ nx = n(1)
 ny = n(2)
 nz = n(3)
 !
-cell_u_tag(:,:,:)    = 0.
-cell_v_tag(:,:,:)    = 0.
-cell_w_tag(:,:,:)    = 0.
-cell_phi_tag(:,:,:)  = 0.
+cell_u_tag(:,:,:)    = 0.0_rp
+cell_v_tag(:,:,:)    = 0.0_rp
+cell_w_tag(:,:,:)    = 0.0_rp
+cell_phi_tag(:,:,:)  = 0.0_rp
 Level_set(:,:,:)     = 0
 !
 inquire(file=trim(datadir)//'IBM.bin',exist=is_data)
@@ -168,9 +168,9 @@ if (.not.is_data) then
        do k=0,nz
         do j=0,ny
          do i=0,nx
-          cell_u_tag(i,j,k) = 0.5*(cell_phi_tag(i+1,j,k)+cell_phi_tag(i,j,k))
-          cell_v_tag(i,j,k) = 0.5*(cell_phi_tag(i,j+1,k)+cell_phi_tag(i,j,k))
-          cell_w_tag(i,j,k) = 0.5*(cell_phi_tag(i,j,k+1)+cell_phi_tag(i,j,k))
+          cell_u_tag(i,j,k) = 0.5_rp*(cell_phi_tag(i+1,j,k)+cell_phi_tag(i,j,k))
+          cell_v_tag(i,j,k) = 0.5_rp*(cell_phi_tag(i,j+1,k)+cell_phi_tag(i,j,k))
+          cell_w_tag(i,j,k) = 0.5_rp*(cell_phi_tag(i,j,k+1)+cell_phi_tag(i,j,k))
          enddo
         enddo
        enddo
@@ -179,13 +179,13 @@ if (.not.is_data) then
   !---------------------------------------------------------------------
 
 #if defined(_IBM_BC)
-  nx_surf(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6)      = 0.
-  ny_surf(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6)      = 0.
-  nz_surf(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6)      = 0.
-  nabs_surf(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6)    = 0.
-  nx_surf_nonnorm(-1:n(1)+1,-1:n(2)+1,-1:n(3)+1) = 0.
-  ny_surf_nonnorm(-1:n(1)+1,-1:n(2)+1,-1:n(3)+1) = 0.
-  nz_surf_nonnorm(-1:n(1)+1,-1:n(2)+1,-1:n(3)+1) = 0.
+  nx_surf(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6)      = 0.0_rp
+  ny_surf(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6)      = 0.0_rp
+  nz_surf(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6)      = 0.0_rp
+  nabs_surf(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6)    = 0.0_rp
+  nx_surf_nonnorm(-1:n(1)+1,-1:n(2)+1,-1:n(3)+1) = 0.0_rp
+  ny_surf_nonnorm(-1:n(1)+1,-1:n(2)+1,-1:n(3)+1) = 0.0_rp
+  nz_surf_nonnorm(-1:n(1)+1,-1:n(2)+1,-1:n(3)+1) = 0.0_rp
 
   call normal_vectors(n,lo,hi,Level_set,cell_phi_tag,nx_surf,ny_surf,nz_surf,nabs_surf,zc,zf,dzc,dzf,dl,dli,n,surf_height)
      !$acc enter data copyin(nx_surf,ny_surf,nz_surf,nabs_surf)
@@ -193,9 +193,9 @@ if (.not.is_data) then
      call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,nabs_surf)
   if (myid.eq.0)  print*, '*** Normal vectors calculated! ***'
   !*********************************************************************
-  x_intersect(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) = 0.
-  y_intersect(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) = 0.
-  z_intersect(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) = 0.
+  x_intersect(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) = 0.0_rp
+  y_intersect(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) = 0.0_rp
+  z_intersect(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) = 0.0_rp
 
   call intersect(n,lo,hi,nx_surf,ny_surf,nz_surf,nabs_surf,x_intersect,y_intersect,z_intersect,zc,dzc,surf_height)
       !$acc enter data copyin(x_intersect,y_intersect,z_intersect)
@@ -205,16 +205,16 @@ if (.not.is_data) then
   if (myid.eq.0)  print*, '*** Intersect points have  been calculated! ***'
   !*********************************************************************
 
-  x_mirror(-5:i1+5,-5:j1+5,-5:k1+5)    =   -1000.
-  y_mirror(-5:i1+5,-5:j1+5,-5:k1+5)    =   -1000.
-  z_mirror(-5:i1+5,-5:j1+5,-5:k1+5)    =   -1000.
-  x_IP1(-5:i1+5,-5:j1+5,-5:k1+5)       =   -1000.
-  x_IP2(-5:i1+5,-5:j1+5,-5:k1+5)       =   -1000.
-  y_IP1(-5:i1+5,-5:j1+5,-5:k1+5)       =   -1000.
-  y_IP2(-5:i1+5,-5:j1+5,-5:k1+5)       =   -1000.
-  z_IP1(-5:i1+5,-5:j1+5,-5:k1+5)       =   -1000.
-  z_IP2(-5:i1+5,-5:j1+5,-5:k1+5)       =   -1000.
-  deltan(-5:i1+5,-5:j1+5,-5:k1+5)      =   -1000.
+  x_mirror(-5:i1+5,-5:j1+5,-5:k1+5)    =   -1000.0_rp
+  y_mirror(-5:i1+5,-5:j1+5,-5:k1+5)    =   -1000.0_rp
+  z_mirror(-5:i1+5,-5:j1+5,-5:k1+5)    =   -1000.0_rp
+  x_IP1(-5:i1+5,-5:j1+5,-5:k1+5)       =   -1000.0_rp
+  x_IP2(-5:i1+5,-5:j1+5,-5:k1+5)       =   -1000.0_rp
+  y_IP1(-5:i1+5,-5:j1+5,-5:k1+5)       =   -1000.0_rp
+  y_IP2(-5:i1+5,-5:j1+5,-5:k1+5)       =   -1000.0_rp
+  z_IP1(-5:i1+5,-5:j1+5,-5:k1+5)       =   -1000.0_rp
+  z_IP2(-5:i1+5,-5:j1+5,-5:k1+5)       =   -1000.0_rp
+  deltan(-5:i1+5,-5:j1+5,-5:k1+5)      =   -1000.0_rp
 
   call mirrorpoints(n,lo,hi, &
                     nx_surf,ny_surf,nz_surf,nabs_surf, &
@@ -282,8 +282,8 @@ deallocate(x_mirror,y_mirror,z_mirror)
 
   if (myid == 0)  print*, '*** Mirror points have been calculated! ***'
   !------------------------------------------------------------
-  WP1(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6,:) = 0.
-  WP2(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6,:) = 0.
+  WP1(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6,:) = 0.0_rp
+  WP2(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6,:) = 0.0_rp
   call InterpolationWeights(n,lo,hi, &
                             nabs_surf,Level_set, &
                             x_IP1,y_IP1,z_IP1, &
@@ -312,7 +312,7 @@ deallocate(x_mirror,y_mirror,z_mirror)
 #else
    dummy_time = 0.; dummy_istep = 0
    !$acc update self(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
-   call load('w',trim(datadir)//'IBM.bin',MPI_COMM_WORLD,ng,[1,1,1],lo,hi,dummy_time,dummy_istep,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
+   call load_all('w',trim(datadir)//'IBM.bin',MPI_COMM_WORLD,ng,[1,1,1],lo,hi,dummy_time,dummy_istep,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
 #endif
 else
 #if defined(_IBM_BC)
@@ -356,7 +356,7 @@ else
       k_IP2(:,:,hi(3)+h)       = k_IP2(:,:,hi(3))
    end do
 #else
-   call load('r',trim(datadir)//'IBM.bin',MPI_COMM_WORLD,ng,[1,1,1],lo,hi,dummy_time,dummy_istep,cell_u_tag,cell_v_tag,cell_w_tag,          cell_phi_tag)
+   call load_all('r',trim(datadir)//'IBM.bin',MPI_COMM_WORLD,ng,[1,1,1],lo,hi,dummy_time,dummy_istep,cell_u_tag,cell_v_tag,cell_w_tag,          cell_phi_tag)
    ! allocate(tmp(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6))
    !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
    ! tmp(:,:,:) = real(Level_set(:,:,:),rp)

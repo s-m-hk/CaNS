@@ -59,24 +59,29 @@ real(rp)        , protected, dimension(0:1,3)   ::  bcpre
 real(rp), protected, dimension(3) :: gacc 
 real(rp), protected, dimension(3) :: bforce
 logical , protected, dimension(4) :: is_forced
+#if defined(_HEAT_TRANSFER)
+real(rp), protected, dimension(4) :: velf
+#else
 real(rp), protected, dimension(3) :: velf
+#endif
 !
 integer , protected, dimension(3) :: ng
 real(rp), dimension(3) :: l
 real(rp), protected, dimension(3) :: dl
 real(rp), protected, dimension(3) :: dli
 !
-character(len=3)   :: itmp
-real(rp)           :: alph_f,alph_s,Pr,dr,tg0
-real(rp)           :: solidtemp
-real(rp)           :: tmp0,beta_th
-character(len=1), dimension(0:1,3) :: cbctmp
-real(rp)        , dimension(0:1,3) ::  bctmp
-real(rp) :: solid_height_ratio
-real(rp) :: Rotation_angle
-real(rp) :: sx, sy, sz, depth, rod
-character(len=15) :: surface_type
-logical :: height_map
+character(len=1), protected, dimension(0:1,3) :: cbctmp
+real(rp)        , protected, dimension(0:1,3) ::  bctmp
+!
+character(len=3), protected       :: itmp
+real(rp), protected               :: alph_f,alph_s,Pr,dr,tg0
+real(rp), protected               :: solidtemp
+real(rp), protected               :: tmp0,beta_th
+real(rp), protected               :: solid_height_ratio
+real(rp), protected               :: Rotation_angle
+real(rp), protected               :: sx, sy, sz, depth, rod
+character(len=15), protected      :: surface_type
+logical, protected                :: height_map
 !
 #if defined(_OPENACC)
 !
@@ -104,7 +109,7 @@ contains
         read(iunit,*,iostat=ierr) uref,lref,rey
         read(iunit,*,iostat=ierr) inivel
         read(iunit,*,iostat=ierr) is_wallturb
-        read(iunit,*,iostat=ierr) nstep, time_max,tw_max
+        read(iunit,*,iostat=ierr) nstep,time_max,tw_max
         read(iunit,*,iostat=ierr) stop_type(1),stop_type(2),stop_type(3)
         read(iunit,*,iostat=ierr) restart,is_overwrite_save,nsaves_max,reset_time; if( ierr /= 0 ) nsaves_max = 0 ! a good default, for backward compatibility
         read(iunit,*,iostat=ierr) ioutput,icheck,iout0d,iout1d,iout2d,iout3d,ioutLPP,isave
@@ -169,7 +174,7 @@ contains
       if(myid == 0) print*, 'Error reading heat input file' 
       if(myid == 0) print*, 'Aborting...'
       call MPI_FINALIZE(ierr)
-      call exit
+      error stop
     endif
     close(iunit)
 #endif
@@ -199,8 +204,8 @@ contains
     cudecomp_is_h_comm_autotune  = .true.
     cudecomp_is_t_enable_nccl    = .true.
     cudecomp_is_h_enable_nccl    = .true.
-    cudecomp_is_t_enable_nvshmem = .true.
-    cudecomp_is_h_enable_nvshmem = .true.
+    cudecomp_is_t_enable_nvshmem = .false.
+    cudecomp_is_h_enable_nvshmem = .false.
     inquire(file='cudecomp.in', exist = exists)
     if(exists) then
       open(newunit=iunit,file='cudecomp.in',status='old',action='read',iostat=ierr)
@@ -244,7 +249,7 @@ contains
             case default
               cudecomp_h_comm_backend = CUDECOMP_HALO_COMM_MPI
             end select
-          end if
+           end if
         else
           if(myid == 0) print*, 'Error reading cuDecomp input file'
           if(myid == 0) print*, 'Aborting...'

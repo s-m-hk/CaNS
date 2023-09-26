@@ -56,7 +56,6 @@ module mod_weno
     do k=1,nz
       do j=1,ny
         do i=1,nx
-          !
           uxc = 0.5_rp*(ux(i-1,j,k)+ux(i,j,k))
           a   = nint(sign(1._rp,uxc))
           fm2 = a*(tmp(i-2*a,j,k) - tmp(i-3*a,j,k))*dxi
@@ -133,11 +132,9 @@ module mod_weno
           dphidz = we1*dfdlh1+we2*dfdlh2+we3*dfdlh3
           !
           dphidt(i,j,k) = - (uxc*dphidx + uyc*dphidy + uzc*dphidz)
-          !
         enddo
       enddo
     enddo
     !
-    return
   end subroutine weno5
 end module mod_weno

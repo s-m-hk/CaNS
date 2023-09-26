@@ -12,7 +12,7 @@ module mod_mom
   private
   public momx_a,momy_a,momz_a, &
          momx_d,momy_d,momz_d, &
-         momx_p,momy_p,momz_p, cmpt_wallshear
+         momx_p,momy_p,momz_p, cmpt_wallshear, bulk_forcing
 #if defined(_IMPDIFF_1D)
   public momx_d_xy,momy_d_xy,momz_d_xy, &
          momx_d_z ,momy_d_z ,momz_d_z
@@ -38,9 +38,7 @@ module mod_mom
     real(rp) :: uuip,uuim,uvjp,uvjm,uwkp,uwkm
     !
     !$acc parallel loop collapse(3) default(present) private(uuip,uuim,uvjp,uvjm,uwkp,uwkm) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP PRIVATE(uuip,uuim,uvjp,uvjm,uwkp,uwkm) &
-    !$OMP SHARED(nx,ny,nz,dxi,dyi,u,v,w,psi_u,psi_v,psi_w,dudt,dzfi)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)  PRIVATE(uuip,uuim,uvjp,uvjm,uwkp,uwkm)
     do k=1,nz
       do j=1,ny
         do i=1,nx
@@ -50,12 +48,13 @@ module mod_mom
           uvjm  = 0.25*( u(i,j-1,k)+u(i,j,k) )*( v(i+1,j-1,k  )+v(i,j-1,k  ) )
           uwkp  = 0.25*( u(i,j,k+1)+u(i,j,k) )*( w(i+1,j  ,k  )+w(i,j  ,k  ) )
           uwkm  = 0.25*( u(i,j,k-1)+u(i,j,k) )*( w(i+1,j  ,k-1)+w(i,j  ,k-1) )
+
 #if defined(_IBM) && defined(_SIMPLE)
-          if (psi_u(i,j,k) == 0.) then ! if not in solid
-            if (psi_u(i,j+1,k) == 1.) uvjp  = 0._rp
-            if (psi_u(i,j-1,k) == 1.) uvjm  = 0._rp
-            if (psi_u(i,j,k+1) == 1.) uwkp  = 0._rp
-            if (psi_u(i,j,k-1) == 1.) uwkm  = 0._rp
+          if (psi_u(i,j,k) == 0.0_rp) then ! if not in solid
+            if (psi_u(i,j+1,k) == 1.0_rp) uvjp  = 0.0_rp
+            if (psi_u(i,j-1,k) == 1.0_rp) uvjm  = 0.0_rp
+            if (psi_u(i,j,k+1) == 1.0_rp) uwkp  = 0.0_rp
+            if (psi_u(i,j,k-1) == 1.0_rp) uwkm  = 0.0_rp
           endif
 #endif
           !
@@ -88,24 +87,22 @@ module mod_mom
     real(rp) :: uvip,uvim,vvjp,vvjm,wvkp,wvkm
     !
     !$acc parallel loop collapse(3) default(present) private(uvip,uvim,vvjp,vvjm,wvkp,wvkm) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP PRIVATE(uvip,uvim,vvjp,vvjm,wvkp,wvkm) &
-    !$OMP SHARED(nx,ny,nz,dxi,dyi,dzfi,u,v,w,psi_u,psi_v,psi_w,dvdt)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)  PRIVATE(uuip,uuim,uvjp,uvjm,uwkp,uwkm)
     do k=1,nz
       do j=1,ny
         do i=1,nx
-          uvip  = 0.25*( u(i  ,j,k  )+u(i  ,j+1,k  ) )*( v(i,j,k)+v(i+1,j,k) )
-          uvim  = 0.25*( u(i-1,j,k  )+u(i-1,j+1,k  ) )*( v(i,j,k)+v(i-1,j,k) )
-          vvjp  = 0.25*( v(i  ,j,k  )+v(i  ,j+1,k  ) )*( v(i,j,k)+v(i,j+1,k) )
-          vvjm  = 0.25*( v(i  ,j,k  )+v(i  ,j-1,k  ) )*( v(i,j,k)+v(i,j-1,k) )
-          wvkp  = 0.25*( w(i  ,j,k  )+w(i  ,j+1,k  ) )*( v(i,j,k+1)+v(i,j,k) )
-          wvkm  = 0.25*( w(i  ,j,k-1)+w(i  ,j+1,k-1) )*( v(i,j,k-1)+v(i,j,k) )
+          uvip  = 0.25_rp*( u(i  ,j,k  )+u(i  ,j+1,k  ) )*( v(i,j,k)+v(i+1,j,k) )
+          uvim  = 0.25_rp*( u(i-1,j,k  )+u(i-1,j+1,k  ) )*( v(i,j,k)+v(i-1,j,k) )
+          vvjp  = 0.25_rp*( v(i  ,j,k  )+v(i  ,j+1,k  ) )*( v(i,j,k)+v(i,j+1,k) )
+          vvjm  = 0.25_rp*( v(i  ,j,k  )+v(i  ,j-1,k  ) )*( v(i,j,k)+v(i,j-1,k) )
+          wvkp  = 0.25_rp*( w(i  ,j,k  )+w(i  ,j+1,k  ) )*( v(i,j,k+1)+v(i,j,k) )
+          wvkm  = 0.25_rp*( w(i  ,j,k-1)+w(i  ,j+1,k-1) )*( v(i,j,k-1)+v(i,j,k) )
 #if defined(_IBM) && defined(_SIMPLE)
-          if (psi_v(i,j,k) == 0.) then ! if not in solid
-            if (psi_v(i+1,j,k) == 1.) uvip = 0._rp
-            if (psi_v(i-1,j,k) == 1.) uvim = 0._rp
-            if (psi_v(i,j,k+1) == 1.) wvkp = 0._rp
-            if (psi_v(i,j,k-1) == 1.) wvkm = 0._rp
+          if (psi_v(i,j,k) == 0.0_rp) then ! if not in solid
+            if (psi_v(i+1,j,k) == 1.0_rp) uvip = 0.0_rp
+            if (psi_v(i-1,j,k) == 1.0_rp) uvim = 0.0_rp
+            if (psi_v(i,j,k+1) == 1.0_rp) wvkp = 0.0_rp
+            if (psi_v(i,j,k-1) == 1.0_rp) wvkm = 0.0_rp
           endif
 #endif
           !
@@ -138,9 +135,7 @@ module mod_mom
     real(rp) :: uwip,uwim,vwjp,vwjm,wwkp,wwkm
     !
     !$acc parallel loop collapse(3) default(present) private(uwip,uwim,vwjp,vwjm,wwkp,wwkm) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP PRIVATE(uwip,uwim,vwjp,vwjm,wwkp,wwkm) &
-    !$OMP SHARED(nx,ny,nz,dxi,dyi,dzci,u,v,w,psi_u,psi_v,psi_w,dwdt)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)  PRIVATE(uvip,uvim,vvjp,vvjm,wvkp,wvkm)
     do k=1,nz
       do j=1,ny
         do i=1,nx
@@ -151,11 +146,11 @@ module mod_mom
           wwkp  = 0.25*( w(i,j,k)+w(i,j,k+1) )*( w(i  ,j  ,k)+w(i  ,j  ,k+1) )
           wwkm  = 0.25*( w(i,j,k)+w(i,j,k-1) )*( w(i  ,j  ,k)+w(i  ,j  ,k-1) )
 #if defined(_IBM) && defined(_SIMPLE)
-          if (psi_w(i,j,k) == 0.) then ! if not in solid
-           if (psi_w(i+1,j,k) == 1.) uwip = 0._rp
-           if (psi_w(i-1,j,k) == 1.) uwim = 0._rp
-           if (psi_w(i,j+1,k) == 1.) vwjp = 0._rp
-           if (psi_w(i,j-1,k) == 1.) vwjm = 0._rp
+          if (psi_w(i,j,k) == 0.0_rp) then ! if not in solid
+           if (psi_w(i+1,j,k) == 1.0_rp) uwip = 0.0_rp
+           if (psi_w(i-1,j,k) == 1.0_rp) uwim = 0.0_rp
+           if (psi_w(i,j+1,k) == 1.0_rp) vwjp = 0.0_rp
+           if (psi_w(i,j-1,k) == 1.0_rp) vwjm = 0.0_rp
           endif
 #endif
           !
@@ -188,9 +183,7 @@ module mod_mom
     integer :: i,j,k
     !
     !$acc parallel loop collapse(3) default(present) private(dudxp,dudxm,dudyp,dudym,dudzp,dudzm) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP PRIVATE(dudxp,dudxm,dudyp,dudym,dudzp,dudzm) &
-    !$OMP SHARED(nx,ny,nz,dxi,dyi,dzci,dzfi,u,psi_u,psi_v,psi_w,dudt,visc)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)  PRIVATE(dudxp,dudxm,dudyp,dudym,dudzp,dudzm)
     do k=1,nz
       do j=1,ny
         do i=1,nx
@@ -201,11 +194,11 @@ module mod_mom
           dudzp = (u(i,j,k+1)-u(i,j,k))*dzci(k  )
           dudzm = (u(i,j,k)-u(i,j,k-1))*dzci(k-1)
 #if defined(_IBM) && defined(_SIMPLE)
-          if (psi_u(i,j,k) == 0.) then ! if not in solid
-            if (psi_u(i,j+1,k) == 1.) dudyp = -2._rp*u(i,j,k)*dyi
-            if (psi_u(i,j-1,k) == 1.) dudym =  2._rp*u(i,j,k)*dyi
-            if (psi_u(i,j,k+1) == 1.) dudzp = -2._rp*u(i,j,k)*dzci(k)
-            if (psi_u(i,j,k-1) == 1.) dudzm =  2._rp*u(i,j,k)*dzci(k)
+          if (psi_u(i,j,k) == 0.0_rp) then ! if not in solid
+            if (psi_u(i,j+1,k) == 1.0_rp) dudyp = -2.0_rp*u(i,j,k)*dyi
+            if (psi_u(i,j-1,k) == 1.0_rp) dudym =  2.0_rp*u(i,j,k)*dyi
+            if (psi_u(i,j,k+1) == 1.0_rp) dudzp = -2.0_rp*u(i,j,k)*dzci(k)
+            if (psi_u(i,j,k-1) == 1.0_rp) dudzm =  2.0_rp*u(i,j,k)*dzci(k)
           endif
 #endif
           dudt(i,j,k) = dudt(i,j,k) + &
@@ -235,9 +228,7 @@ module mod_mom
     integer :: i,j,k
     !
     !$acc parallel loop collapse(3) default(present) private(dvdxp,dvdxm,dvdyp,dvdym,dvdzp,dvdzm) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP PRIVATE(dvdxp,dvdxm,dvdyp,dvdym,dvdzp,dvdzm) &
-    !$OMP SHARED(nx,ny,nz,dxi,dyi,dzci,dzfi,v,psi_u,psi_v,psi_w,dvdt,visc)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)  PRIVATE(dvdxp,dvdxm,dvdyp,dvdym,dvdzp,dvdzm)
     do k=1,nz
       do j=1,ny
         do i=1,nx
@@ -248,11 +239,11 @@ module mod_mom
           dvdzp = (v(i,j,k+1)-v(i,j,k))*dzci(k  )
           dvdzm = (v(i,j,k)-v(i,j,k-1))*dzci(k-1)
 #if defined(_IBM) && defined(_SIMPLE)
-          if (psi_v(i,j,k) == 0.) then ! if not in solid
-            if (psi_v(i+1,j,k) == 1.) dvdxp = -2._rp*v(i,j,k)*dxi
-            if (psi_v(i-1,j,k) == 1.) dvdxm =  2._rp*v(i,j,k)*dxi
-            if (psi_v(i,j,k+1) == 1.) dvdzp = -2._rp*v(i,j,k)*dzci(k)
-            if (psi_v(i,j,k-1) == 1.) dvdzm =  2._rp*v(i,j,k)*dzci(k)
+          if (psi_v(i,j,k) == 0.0_rp) then ! if not in solid
+            if (psi_v(i+1,j,k) == 1.0_rp) dvdxp = -2.0_rp*v(i,j,k)*dxi
+            if (psi_v(i-1,j,k) == 1.0_rp) dvdxm =  2.0_rp*v(i,j,k)*dxi
+            if (psi_v(i,j,k+1) == 1.0_rp) dvdzp = -2.0_rp*v(i,j,k)*dzci(k)
+            if (psi_v(i,j,k-1) == 1.0_rp) dvdzm =  2.0_rp*v(i,j,k)*dzci(k)
           endif
 #endif
           dvdt(i,j,k) = dvdt(i,j,k) + &
@@ -282,9 +273,7 @@ module mod_mom
     real(rp) :: dwdxp,dwdxm,dwdyp,dwdym,dwdzp,dwdzm
     !
     !$acc parallel loop collapse(3) default(present) private(dwdxp,dwdxm,dwdyp,dwdym,dwdzp,dwdzm) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP PRIVATE(dwdxp,dwdxm,dwdyp,dwdym,dwdzp,dwdzm) &
-    !$OMP SHARED(nx,ny,nz,dxi,dyi,dzci,dzfi,w,psi_u,psi_v,psi_w,dwdt,visc)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)  PRIVATE(dwdxp,dwdxm,dwdyp,dwdym,dwdzp,dwdzm)
     do k=1,nz
       do j=1,ny
         do i=1,nx
@@ -295,11 +284,11 @@ module mod_mom
           dwdzp = (w(i,j,k+1)-w(i,j,k))*dzfi(k+1)
           dwdzm = (w(i,j,k)-w(i,j,k-1))*dzfi(k  )
 #if defined(_IBM) && defined(_SIMPLE)
-          if (psi_w(i,j,k) == 0.) then ! if not in solid
-           if (psi_w(i+1,j,k) == 1.) dwdxp = -2._rp*w(i,j,k)*dxi
-           if (psi_w(i-1,j,k) == 1.) dwdxm =  2._rp*w(i,j,k)*dxi
-           if (psi_w(i,j+1,k) == 1.) dwdyp = -2._rp*w(i,j,k)*dyi
-           if (psi_w(i,j-1,k) == 1.) dwdym =  2._rp*w(i,j,k)*dyi
+          if (psi_w(i,j,k) == 0.0_rp) then ! if not in solid
+           if (psi_w(i+1,j,k) == 1.0_rp) dwdxp = -2.0_rp*w(i,j,k)*dxi
+           if (psi_w(i-1,j,k) == 1.0_rp) dwdxm =  2.0_rp*w(i,j,k)*dxi
+           if (psi_w(i,j+1,k) == 1.0_rp) dwdyp = -2.0_rp*w(i,j,k)*dyi
+           if (psi_w(i,j-1,k) == 1.0_rp) dwdym =  2.0_rp*w(i,j,k)*dyi
           endif
 #endif
           dwdt(i,j,k) = dwdt(i,j,k) + &
@@ -321,8 +310,7 @@ module mod_mom
     integer :: i,j,k
     !
     !$acc parallel loop collapse(3) default(present) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP SHARED(nx,ny,nz,dxi,bforce,p,dudt)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)
     do k=1,nz
       do j=1,ny
         do i=1,nx
@@ -342,8 +330,7 @@ module mod_mom
     integer :: i,j,k
     !
     !$acc parallel loop collapse(3) default(present) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP SHARED(nx,ny,nz,dyi,bforce,p,dvdt)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)
     do k=1,nz
       do j=1,ny
         do i=1,nx
@@ -363,8 +350,7 @@ module mod_mom
     integer :: i,j,k
     !
     !$acc parallel loop collapse(3) default(present) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP SHARED(nx,ny,nz,dzci,bforce,p,dwdt)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)
     do k=1,nz
       do j=1,ny
         do i=1,nx
@@ -386,9 +372,7 @@ module mod_mom
     integer :: i,j,k
     !
     !$acc parallel loop collapse(3) default(present) private(dudzp,dudzm) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP PRIVATE(dudzp,dudzm) &
-    !$OMP SHARED(nx,ny,nz,dzci,dzfi,u,dudt,visc)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)  PRIVATE(dudzp,dudzm)
     do k=1,nz
       do j=1,ny
         do i=1,nx
@@ -412,16 +396,14 @@ module mod_mom
     integer :: i,j,k
     !
     !$acc parallel loop collapse(3) default(present) private(dvdzp,dvdzm) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP PRIVATE(dvdzp,dvdzm) &
-    !$OMP SHARED(nx,ny,nz,dzci,dzfi,v,dvdt,visc)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)  PRIVATE(dvdzp,dvdzm)
     do k=1,nz
       do j=1,ny
         do i=1,nx
           dvdzp = (v(i,j,k+1)-v(i,j,k))*dzci(k  )
           dvdzm = (v(i,j,k)-v(i,j,k-1))*dzci(k-1)
           dvdt(i,j,k) = dvdt(i,j,k) + &
-                       (dvdzp-dvdzm)*visc*dzfi(k)
+                        (dvdzp-dvdzm)*visc*dzfi(k)
         end do
       end do
     end do
@@ -438,9 +420,7 @@ module mod_mom
     real(rp) :: dwdzp,dwdzm
     !
     !$acc parallel loop collapse(3) default(present) private(dwdzp,dwdzm) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP PRIVATE(dwdzp,dwdzm) &
-    !$OMP SHARED(nx,ny,nz,dzci,dzfi,w,dwdt,visc)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)  PRIVATE(dwdzp,dwdzm)
     do k=1,nz
       do j=1,ny
         do i=1,nx
@@ -463,9 +443,7 @@ module mod_mom
     integer :: i,j,k
     !
     !$acc parallel loop collapse(3) default(present) private(dudxp,dudxm,dudyp,dudym) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP PRIVATE(dudxp,dudxm,dudyp,dudym) &
-    !$OMP SHARED(nx,ny,nz,dxi,dyi,u,dudt,visc)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)  PRIVATE(dudxp,dudxm,dudyp,dudym)
     do k=1,nz
       do j=1,ny
         do i=1,nx
@@ -491,9 +469,7 @@ module mod_mom
     integer :: i,j,k
     !
     !$acc parallel loop collapse(3) default(present) private(dvdxp,dvdxm,dvdyp,dvdym) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP PRIVATE(dvdxp,dvdxm,dvdyp,dvdym) &
-    !$OMP SHARED(nx,ny,nz,dxi,dyi,v,dvdt,visc)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)  PRIVATE(dvdxp,dvdxm,dvdyp,dvdym)
     do k=1,nz
       do j=1,ny
         do i=1,nx
@@ -519,9 +495,7 @@ module mod_mom
     real(rp) :: dwdxp,dwdxm,dwdyp,dwdym
     !
     !$acc parallel loop collapse(3) default(present) private(dwdxp,dwdxm,dwdyp,dwdym) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP PRIVATE(dwdxp,dwdxm,dwdyp,dwdym) &
-    !$OMP SHARED(nx,ny,nz,dxi,dyi,w,dwdt,visc)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)  PRIVATE(dwdxp,dwdxm,dwdyp,dwdym)
     do k=1,nz
       do j=1,ny
         do i=1,nx
@@ -538,10 +512,11 @@ module mod_mom
   end subroutine momz_d_xy
 #endif
   !
-  subroutine cmpt_wallshear(n,is_bound,l,dli,dzci,dzfi,visc,u,v,w,taux,tauy,tauz)
+  subroutine cmpt_wallshear(n,is_cmpt,is_bound,l,dli,dzci,dzfi,visc,u,v,w,taux,tauy,tauz)
     use mod_param, only: cbcpre
     implicit none
     integer , intent(in ), dimension(3) :: n
+    logical , intent(in ), dimension(    3) :: is_cmpt
     logical , intent(in ), dimension(0:1,3) :: is_bound
     real(rp), intent(in ), dimension(3)     :: l,dli
     real(rp), intent(in ), dimension(0:)    :: dzci,dzfi
@@ -565,145 +540,151 @@ module mod_mom
     dxi = dli(1); dyi = dli(2)
     lx = l(1); ly = l(2); lz = l(3)
     tau21 = 0._rp
-    !$acc data copy(tau21) async(1)
-    if(is_bound(0,2).and.cbcpre(0,2)//cbcpre(1,2) /= 'PP') then
-      !$acc parallel loop collapse(2) default(present) private(dudyp) reduction(+:tau21) async(1)
-      !$OMP PARALLEL DO DEFAULT(shared) private(dudyp) reduction(+:tau21)
-      do k=1,nz
-        do i=1,nx
-          dudyp = (u(i,1 ,k)-u(i,0   ,k))*dyi*visc
-          tau21 = tau21 + dudyp/(dxi*dzfi(k)*lx*lz)
-        end do
-      end do
-    end if
-    if(is_bound(1,2).and.cbcpre(0,2)//cbcpre(1,2) /= 'PP') then
-      !$acc parallel loop collapse(2) default(present) private(dudym) reduction(+:tau21) async(1)
-      !$OMP PARALLEL DO DEFAULT(shared) private(dudym) reduction(+:tau21)
-      do k=1,nz
-        do i=1,nx
-          dudym = (u(i,ny,k)-u(i,ny+1,k))*dyi*visc
-          tau21 = tau21 + dudym/(dxi*dzfi(k)*lx*lz)
-        end do
-      end do
-    end if
-    !$acc end data
     tau31 = 0._rp
-    !$acc data copy(tau31) async(1)
-    if(is_bound(0,3).and.cbcpre(0,3)//cbcpre(1,3) /= 'PP') then
-      !$acc parallel loop collapse(2) default(present) private(dudzp) reduction(+:tau31) async(1)
-      !$OMP PARALLEL DO DEFAULT(shared) private(dudzp) reduction(+:tau31)
-      do j=1,ny
-        do i=1,nx
-          dudzp = (u(i,j,1 )-u(i,j,0   ))*dzci(0)*visc
-          tau31 = tau31 + dudzp/(dxi*dyi*lx*ly)
+    if(is_cmpt(1)) then
+      !$acc data copy(tau21) async(1)
+      if(is_bound(0,2).and.cbcpre(0,2)//cbcpre(1,2) /= 'PP') then
+        !$acc parallel loop collapse(2) default(present) private(dudyp) reduction(+:tau21) async(1)
+        !$OMP PARALLEL DO DEFAULT(shared) private(dudyp) reduction(+:tau21)
+        do k=1,nz
+          do i=1,nx
+            dudyp = (u(i,1 ,k)-u(i,0   ,k))*dyi*visc
+            tau21 = tau21 + dudyp/(dxi*dzfi(k)*lx*lz)
+          end do
         end do
-      end do
-    end if
-    if(is_bound(1,3).and.cbcpre(0,3)//cbcpre(1,3) /= 'PP') then
-      !$acc parallel loop collapse(2) default(present) private(dudzm) reduction(+:tau31) async(1)
-      !$OMP PARALLEL DO DEFAULT(shared) private(dudzm) reduction(+:tau31)
-      do j=1,ny
-        do i=1,nx
-          dudzm = (u(i,j,nz)-u(i,j,nz+1))*dzci(nz)*visc
-          tau31 = tau31 + dudzm/(dxi*dyi*lx*ly)
+      end if
+      if(is_bound(1,2).and.cbcpre(0,2)//cbcpre(1,2) /= 'PP') then
+        !$acc parallel loop collapse(2) default(present) private(dudym) reduction(+:tau21) async(1)
+        !$OMP PARALLEL DO DEFAULT(shared) private(dudym) reduction(+:tau21)
+        do k=1,nz
+          do i=1,nx
+            dudym = (u(i,ny,k)-u(i,ny+1,k))*dyi*visc
+            tau21 = tau21 + dudym/(dxi*dzfi(k)*lx*lz)
+          end do
         end do
-      end do
+      end if
+      !$acc end data
+      !$acc data copy(tau31) async(1)
+      if(is_bound(0,3).and.cbcpre(0,3)//cbcpre(1,3) /= 'PP') then
+        !$acc parallel loop collapse(2) default(present) private(dudzp) reduction(+:tau31) async(1)
+        !$OMP PARALLEL DO DEFAULT(shared) private(dudzp) reduction(+:tau31)
+        do j=1,ny
+          do i=1,nx
+            dudzp = (u(i,j,1 )-u(i,j,0   ))*dzci(0)*visc
+            tau31 = tau31 + dudzp/(dxi*dyi*lx*ly)
+          end do
+        end do
+      end if
+      if(is_bound(1,3).and.cbcpre(0,3)//cbcpre(1,3) /= 'PP') then
+        !$acc parallel loop collapse(2) default(present) private(dudzm) reduction(+:tau31) async(1)
+        !$OMP PARALLEL DO DEFAULT(shared) private(dudzm) reduction(+:tau31)
+        do j=1,ny
+          do i=1,nx
+            dudzm = (u(i,j,nz)-u(i,j,nz+1))*dzci(nz)*visc
+            tau31 = tau31 + dudzm/(dxi*dyi*lx*ly)
+          end do
+        end do
+      end if
+      !$acc end data
     end if
-    !$acc end data
     !
     tau12 = 0._rp
-    !$acc data copy(tau12) async(1)
-    if(is_bound(0,1).and.cbcpre(0,1)//cbcpre(1,1) /= 'PP') then
-      !$acc parallel loop collapse(2) default(present) private(dvdxp) reduction(+:tau12) async(1)
-      !$OMP PARALLEL DO DEFAULT(shared) private(dvdxp) reduction(+:tau12)
-      do k=1,nz
-        do j=1,ny
-          dvdxp = (v(1  ,j,k)-v(0  ,j,k))*dxi*visc
-          tau12 = tau12 + dvdxp/(dyi*dzfi(k)*ly*lz)
-        end do
-      end do
-    end if
-    if(is_bound(1,1).and.cbcpre(0,1)//cbcpre(1,1) /= 'PP') then
-      !$acc parallel loop collapse(2) default(present) private(dvdxm) reduction(+:tau12) async(1)
-      !$OMP PARALLEL DO DEFAULT(shared) private(dvdxm) reduction(+:tau12)
-      do k=1,nz
-        do j=1,ny
-          dvdxm = (v(nx,j,k)-v(nx+1,j,k))*dxi*visc
-          tau12 = tau12 + dvdxm/(dyi*dzfi(k)*ly*lz)
-        end do
-      end do
-    end if
-    !$acc end data
     tau32 = 0._rp
-    !$acc data copy(tau32) async(1)
-    if(is_bound(0,3).and.cbcpre(0,3)//cbcpre(1,3) /= 'PP') then
-      !$acc parallel loop collapse(2) default(present) private(dvdzp) reduction(+:tau32) async(1)
-      !$OMP PARALLEL DO DEFAULT(shared) private(dvdzp) reduction(+:tau32)
-      do j=1,ny
-        do i=1,nx
-          dvdzp = (v(i,j,1 )-v(i,j,0   ))*dzci(0)*visc
-          tau32 = tau32 + dvdzp/(dxi*dyi*lx*ly)
+    if(is_cmpt(2)) then
+      !$acc data copy(tau12) async(1)
+      if(is_bound(0,1).and.cbcpre(0,1)//cbcpre(1,1) /= 'PP') then
+        !$acc parallel loop collapse(2) default(present) private(dvdxp) reduction(+:tau12) async(1)
+        !$OMP PARALLEL DO DEFAULT(shared) private(dvdxp) reduction(+:tau12)
+        do k=1,nz
+          do j=1,ny
+            dvdxp = (v(1  ,j,k)-v(0  ,j,k))*dxi*visc
+            tau12 = tau12 + dvdxp/(dyi*dzfi(k)*ly*lz)
+          end do
         end do
-      end do
-    end if
-    if(is_bound(1,3).and.cbcpre(0,3)//cbcpre(1,3) /= 'PP') then
-      !$acc parallel loop collapse(2) default(present) private(dvdzm) reduction(+:tau32) async(1)
-      !$OMP PARALLEL DO DEFAULT(shared) private(dvdzm) reduction(+:tau32)
-      do j=1,ny
-        do i=1,nx
-          dvdzm = (v(i,j,nz)-v(i,j,nz+1))*dzci(nz)*visc
-          tau32 = tau32 + dvdzm/(dxi*dyi*lx*ly)
+      end if
+      if(is_bound(1,1).and.cbcpre(0,1)//cbcpre(1,1) /= 'PP') then
+        !$acc parallel loop collapse(2) default(present) private(dvdxm) reduction(+:tau12) async(1)
+        !$OMP PARALLEL DO DEFAULT(shared) private(dvdxm) reduction(+:tau12)
+        do k=1,nz
+          do j=1,ny
+            dvdxm = (v(nx,j,k)-v(nx+1,j,k))*dxi*visc
+            tau12 = tau12 + dvdxm/(dyi*dzfi(k)*ly*lz)
+          end do
         end do
-      end do
+      end if
+      !$acc end data
+      !$acc data copy(tau32) async(1)
+      if(is_bound(0,3).and.cbcpre(0,3)//cbcpre(1,3) /= 'PP') then
+        !$acc parallel loop collapse(2) default(present) private(dvdzp) reduction(+:tau32) async(1)
+        !$OMP PARALLEL DO DEFAULT(shared) private(dvdzp) reduction(+:tau32)
+        do j=1,ny
+          do i=1,nx
+            dvdzp = (v(i,j,1 )-v(i,j,0   ))*dzci(0)*visc
+            tau32 = tau32 + dvdzp/(dxi*dyi*lx*ly)
+          end do
+        end do
+      end if
+      if(is_bound(1,3).and.cbcpre(0,3)//cbcpre(1,3) /= 'PP') then
+        !$acc parallel loop collapse(2) default(present) private(dvdzm) reduction(+:tau32) async(1)
+        !$OMP PARALLEL DO DEFAULT(shared) private(dvdzm) reduction(+:tau32)
+        do j=1,ny
+          do i=1,nx
+            dvdzm = (v(i,j,nz)-v(i,j,nz+1))*dzci(nz)*visc
+            tau32 = tau32 + dvdzm/(dxi*dyi*lx*ly)
+          end do
+        end do
+      end if
+      !$acc end data
     end if
-    !$acc end data
     !
     tau13 = 0._rp
-    !$acc data copy(tau13) async(1)
-    if(is_bound(0,1).and.cbcpre(0,1)//cbcpre(1,1) /= 'PP') then
-      !$acc parallel loop collapse(2) default(present) private(dwdxp) reduction(+:tau13) async(1)
-      !$OMP PARALLEL DO DEFAULT(shared) private(dwdxp) reduction(+:tau13)
-      do k=1,nz
-        do j=1,ny
-          dwdxp = (w(1 ,j,k)-w(0   ,j,k))*dxi*visc
-          tau13 = tau13 + dwdxp/(dyi*dzfi(k)*ly*lz)
-        end do
-      end do
-    end if
-    if(is_bound(1,1).and.cbcpre(0,1)//cbcpre(1,1) /= 'PP') then
-      !$acc parallel loop collapse(2) default(present) private(dwdxm) reduction(+:tau13) async(1)
-      !$OMP PARALLEL DO DEFAULT(shared) private(dwdxm) reduction(+:tau13)
-      do k=1,nz
-        do j=1,ny
-          dwdxm = (w(nx,j,k)-w(nx+1,j,k))*dxi*visc
-          tau13 = tau13 + dwdxm/(dyi*dzfi(k)*ly*lz)
-        end do
-      end do
-    end if
-    !$acc end data
     tau23 = 0._rp
-    !$acc data copy(tau23) async(1)
-    if(is_bound(0,2).and.cbcpre(0,2)//cbcpre(1,2) /= 'PP') then
-      !$acc parallel loop collapse(2) default(present) private(dwdyp) reduction(+:tau23) async(1)
-      !$OMP PARALLEL DO DEFAULT(shared) private(dwdyp) reduction(+:tau23)
-      do k=1,nz
-        do i=1,nx
-          dwdyp = (w(i,1,k )-w(i,0   ,k))*dyi*visc
-          tau23 = tau23 + dwdyp/(dxi*dzfi(k)*lx*lz)
+    if(is_cmpt(3)) then
+      !$acc data copy(tau13) async(1)
+      if(is_bound(0,1).and.cbcpre(0,1)//cbcpre(1,1) /= 'PP') then
+        !$acc parallel loop collapse(2) default(present) private(dwdxp) reduction(+:tau13) async(1)
+        !$OMP PARALLEL DO DEFAULT(shared) private(dwdxp) reduction(+:tau13)
+        do k=1,nz
+          do j=1,ny
+            dwdxp = (w(1 ,j,k)-w(0   ,j,k))*dxi*visc
+            tau13 = tau13 + dwdxp/(dyi*dzfi(k)*ly*lz)
+          end do
         end do
-      end do
-    end if
-    if(is_bound(1,2).and.cbcpre(0,2)//cbcpre(1,2) /= 'PP') then
-      !$acc parallel loop collapse(2) default(present) private(dwdym) reduction(+:tau23) async(1)
-      !$OMP PARALLEL DO DEFAULT(shared) private(dwdym) reduction(+:tau23)
-      do k=1,nz
-        do i=1,nx
-          dwdym = (w(i,ny,k)-w(i,ny+1,k))*dyi*visc
-          tau23 = tau23 + dwdym/(dxi*dzfi(k)*lx*lz)
+      end if
+      if(is_bound(1,1).and.cbcpre(0,1)//cbcpre(1,1) /= 'PP') then
+        !$acc parallel loop collapse(2) default(present) private(dwdxm) reduction(+:tau13) async(1)
+        !$OMP PARALLEL DO DEFAULT(shared) private(dwdxm) reduction(+:tau13)
+        do k=1,nz
+          do j=1,ny
+            dwdxm = (w(nx,j,k)-w(nx+1,j,k))*dxi*visc
+            tau13 = tau13 + dwdxm/(dyi*dzfi(k)*ly*lz)
+          end do
         end do
-      end do
+      end if
+      !$acc end data
+      !$acc data copy(tau23) async(1)
+      if(is_bound(0,2).and.cbcpre(0,2)//cbcpre(1,2) /= 'PP') then
+        !$acc parallel loop collapse(2) default(present) private(dwdyp) reduction(+:tau23) async(1)
+        !$OMP PARALLEL DO DEFAULT(shared) private(dwdyp) reduction(+:tau23)
+        do k=1,nz
+          do i=1,nx
+            dwdyp = (w(i,1,k )-w(i,0   ,k))*dyi*visc
+            tau23 = tau23 + dwdyp/(dxi*dzfi(k)*lx*lz)
+          end do
+        end do
+      end if
+      if(is_bound(1,2).and.cbcpre(0,2)//cbcpre(1,2) /= 'PP') then
+        !$acc parallel loop collapse(2) default(present) private(dwdym) reduction(+:tau23) async(1)
+        !$OMP PARALLEL DO DEFAULT(shared) private(dwdym) reduction(+:tau23)
+        do k=1,nz
+          do i=1,nx
+            dwdym = (w(i,ny,k)-w(i,ny+1,k))*dyi*visc
+            tau23 = tau23 + dwdym/(dxi*dzfi(k)*lx*lz)
+          end do
+        end do
+      end if
+      !$acc end data
     end if
-    !$acc end data
     !$acc wait(1)
     tau(:,:) = 0._rp
     tau(2,1) = tau21
@@ -717,6 +698,32 @@ module mod_mom
     tauy(:) = tau(:,2)
     tauz(:) = tau(:,3)
   end subroutine cmpt_wallshear
+  !
+  subroutine bulk_forcing(n,is_forced,f,u,v,w)
+    integer , intent(in   ), dimension(3) :: n
+    logical , intent(in   ), dimension(3) :: is_forced
+    real(rp), intent(in   ), dimension(3) :: f
+    real(rp), intent(inout), dimension(0:,0:,0:) :: u,v,w
+    real(rp) :: ff
+    if(is_forced(1)) then
+      ff = f(1)
+      !$acc kernels default(present) async(1)
+      u(1:n(1),1:n(2),1:n(3)) = u(1:n(1),1:n(2),1:n(3)) + ff
+      !$acc end kernels
+    end if
+    if(is_forced(2)) then
+      ff = f(2)
+      !$acc kernels default(present) async(1)
+      v(1:n(1),1:n(2),1:n(3)) = v(1:n(1),1:n(2),1:n(3)) + ff
+      !$acc end kernels
+    end if
+    if(is_forced(3)) then
+      ff = f(3)
+      !$acc kernels default(present) async(1)
+      w(1:n(1),1:n(2),1:n(3)) = w(1:n(1),1:n(2),1:n(3)) + ff
+      !$acc end kernels
+    end if
+  end subroutine bulk_forcing
   !
   subroutine mom_xyz_ad(nx,ny,nz,dxi,dyi,dzci,dzfi,visc,u,v,w,dudt,dvdt,dwdt,dudtd,dvdtd,dwdtd,psi_u,psi_v,psi_w)
     !
@@ -760,7 +767,7 @@ module mod_mom
     !$acc private(dudtd_xy_s,dudtd_z_s) &
     !$acc private(dvdtd_xy_s,dvdtd_z_s) &
     !$acc private(dwdtd_xy_s,dwdtd_z_s)
-    !$OMP PARALLEL DO DEFAULT(shared) &
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared) &
     !$OMP PRIVATE(u_ccm,u_pcm,u_cpm,u_cmc,u_pmc,u_mcc,u_ccc,u_pcc,u_mpc,u_cpc,u_cmp,u_mcp,u_ccp) &
     !$OMP PRIVATE(v_ccm,v_pcm,v_cpm,v_cmc,v_pmc,v_mcc,v_ccc,v_pcc,v_mpc,v_cpc,v_cmp,v_mcp,v_ccp) &
     !$OMP PRIVATE(w_ccm,w_pcm,w_cpm,w_cmc,w_pmc,w_mcc,w_ccc,w_pcc,w_mpc,w_cpc,w_cmp,w_mcp,w_ccp) &
@@ -832,20 +839,12 @@ module mod_mom
           dudzp = (u_ccp-u_ccc)*dzci(k  )
           dudzm = (u_ccc-u_ccm)*dzci(k-1)
 #if defined(_IBM) && defined(_SIMPLE)
-          if (psi_u(i,j,k) == 0._rp) then ! if not in solid
-            if (psi_u(i,j+1,k) == 1._rp) dudyp = -2._rp*u(i,j,k)*dyi
-            if (psi_u(i,j-1,k) == 1._rp) dudym =  2._rp*u(i,j,k)*dyi
-            if (psi_u(i,j,k+1) == 1._rp) dudzp = -2._rp*u(i,j,k)*dzci(k)
-            if (psi_u(i,j,k-1) == 1._rp) dudzm =  2._rp*u(i,j,k)*dzci(k)
+          if (psi_u(i,j,k) == 0.0_rp) then ! if not in solid
+            if (psi_u(i,j+1,k) == 1.0_rp) dudyp = -2.0_rp*u(i,j,k)*dyi
+            if (psi_u(i,j-1,k) == 1.0_rp) dudym =  2.0_rp*u(i,j,k)*dyi
+            if (psi_u(i,j,k+1) == 1.0_rp) dudzp = -2.0_rp*u(i,j,k)*dzci(k)
+            if (psi_u(i,j,k-1) == 1.0_rp) dudzm =  2.0_rp*u(i,j,k)*dzci(k)
           endif
-          ! dudyp = dudyp - ((1. - psi_u(i,j,k))*psi_u(i,j+1,k)*dudyp) &
-                        ! + ((1. - psi_u(i,j,k))*psi_u(i,j+1,k)*(-2._rp*u(i,j,k)*dyi))
-          ! dudym = dudym - ((1. - psi_u(i,j,k))*psi_u(i,j-1,k)*dudym) &
-                        ! + ((1. - psi_u(i,j,k))*psi_u(i,j-1,k)*( 2._rp*u(i,j,k)*dyi))
-          ! dudzp = dudzp - ((1. - psi_u(i,j,k))*psi_u(i,j,k+1)*dudzp) &
-                        ! + ((1. - psi_u(i,j,k))*psi_u(i,j,k+1)*(-2._rp*u(i,j,k)*dzci(k)))
-          ! dudzm = dudzm - ((1. - psi_u(i,j,k))*psi_u(i,j,k-1)*dudzm) &
-                        ! + ((1. - psi_u(i,j,k))*psi_u(i,j,k-1)*( 2._rp*u(i,j,k)*dzci(k)))
 #endif
           !
           ! x advection
@@ -857,16 +856,12 @@ module mod_mom
           uwkp  = 0.25_rp*(u_ccp+u_ccc)*(w_pcc+w_ccc)
           uwkm  = 0.25_rp*(u_ccm+u_ccc)*(w_pcm+w_ccm)
 #if defined(_IBM) && defined(_SIMPLE)
-          if (psi_u(i,j,k) == 0._rp) then ! if not in solid
-            if (psi_u(i,j+1,k) == 1._rp) uvjp  = 0._rp
-            if (psi_u(i,j-1,k) == 1._rp) uvjm  = 0._rp
-            if (psi_u(i,j,k+1) == 1._rp) uwkp  = 0._rp
-            if (psi_u(i,j,k-1) == 1._rp) uwkm  = 0._rp
+          if (psi_u(i,j,k) == 0.0_rp) then ! if not in solid
+            if (psi_u(i,j+1,k) == 1.0_rp) uvjp  = 0.0_rp
+            if (psi_u(i,j-1,k) == 1.0_rp) uvjm  = 0.0_rp
+            if (psi_u(i,j,k+1) == 1.0_rp) uwkp  = 0.0_rp
+            if (psi_u(i,j,k-1) == 1.0_rp) uwkm  = 0.0_rp
           endif
-          ! uvjp = uvjp - ((1. - psi_u(i,j,k))*psi_u(i,j+1,k)*uvjp)
-          ! uvjm = uvjm - ((1. - psi_u(i,j,k))*psi_u(i,j-1,k)*uvjm)
-          ! uwkp = uwkp - ((1. - psi_u(i,j,k))*psi_u(i,j,k+1)*uwkp)
-          ! uwkm = uwkm - ((1. - psi_u(i,j,k))*psi_u(i,j,k-1)*uwkm)
 #endif
           !
           dudtd_xy_s = visc*(dudxp-dudxm)*dxi + &
@@ -885,20 +880,12 @@ module mod_mom
           dvdzp = (v_ccp-v_ccc)*dzci(k  )
           dvdzm = (v_ccc-v_ccm)*dzci(k-1)
 #if defined(_IBM) && defined(_SIMPLE)
-          if (psi_v(i,j,k) == 0._rp) then ! if not in solid
-            if (psi_v(i+1,j,k) == 1._rp) dvdxp = -2._rp*v(i,j,k)*dxi
-            if (psi_v(i-1,j,k) == 1._rp) dvdxm =  2._rp*v(i,j,k)*dxi
-            if (psi_v(i,j,k+1) == 1._rp) dvdzp = -2._rp*v(i,j,k)*dzci(k)
-            if (psi_v(i,j,k-1) == 1._rp) dvdzm =  2._rp*v(i,j,k)*dzci(k)
+          if (psi_v(i,j,k) == 0.0_rp) then ! if not in solid
+            if (psi_v(i+1,j,k) == 1.0_rp) dvdxp = -2.0_rp*v(i,j,k)*dxi
+            if (psi_v(i-1,j,k) == 1.0_rp) dvdxm =  2.0_rp*v(i,j,k)*dxi
+            if (psi_v(i,j,k+1) == 1.0_rp) dvdzp = -2.0_rp*v(i,j,k)*dzci(k)
+            if (psi_v(i,j,k-1) == 1.0_rp) dvdzm =  2.0_rp*v(i,j,k)*dzci(k)
           endif
-          ! dvdxp = dvdxp - ((1. - psi_v(i,j,k))*psi_v(i+1,j,k)*dvdxp) &
-                        ! + ((1. - psi_v(i,j,k))*psi_v(i+1,j,k)*(-2._rp*v(i,j,k)*dxi))
-          ! dvdxm = dvdxm - ((1. - psi_v(i,j,k))*psi_v(i-1,j,k)*dvdxm) &
-                        ! + ((1. - psi_v(i,j,k))*psi_v(i-1,j,k)*( 2._rp*v(i,j,k)*dxi))
-          ! dvdzp = dvdzp - ((1. - psi_v(i,j,k))*psi_v(i,j,k+1)*dvdzp) &
-                        ! + ((1. - psi_v(i,j,k))*psi_v(i,j,k+1)*(-2._rp*v(i,j,k)*dzci(k)))
-          ! dvdzm = dvdzm - ((1. - psi_v(i,j,k))*psi_v(i,j,k-1)*dvdzm) &
-                        ! + ((1. - psi_v(i,j,k))*psi_v(i,j,k-1)*( 2._rp*v(i,j,k)*dzci(k)))
 #endif
           !
           ! y advection
@@ -910,16 +897,12 @@ module mod_mom
           wvkp  = 0.25_rp*(w_ccc+w_cpc)*(v_ccp+v_ccc)
           wvkm  = 0.25_rp*(w_ccm+w_cpm)*(v_ccm+v_ccc)
 #if defined(_IBM) && defined(_SIMPLE)
-          if (psi_v(i,j,k) == 0._rp) then ! if not in solid
-            if (psi_v(i+1,j,k) == 1._rp) uvip = 0._rp
-            if (psi_v(i-1,j,k) == 1._rp) uvim = 0._rp
-            if (psi_v(i,j,k+1) == 1._rp) wvkp = 0._rp
-            if (psi_v(i,j,k-1) == 1._rp) wvkm = 0._rp
+          if (psi_v(i,j,k) == 0.0_rp) then ! if not in solid
+            if (psi_v(i+1,j,k) == 1.0_rp) uvip = 0.0_rp
+            if (psi_v(i-1,j,k) == 1.0_rp) uvim = 0.0_rp
+            if (psi_v(i,j,k+1) == 1.0_rp) wvkp = 0.0_rp
+            if (psi_v(i,j,k-1) == 1.0_rp) wvkm = 0.0_rp
           endif
-          ! uvip = uvip - ((1. - psi_v(i,j,k))*psi_v(i+1,j,k)*uvip)
-          ! uvim = uvim - ((1. - psi_v(i,j,k))*psi_v(i-1,j,k)*uvim)
-          ! wvkp = wvkp - ((1. - psi_v(i,j,k))*psi_v(i,j,k+1)*wvkp)
-          ! wvkm = wvkm - ((1. - psi_v(i,j,k))*psi_v(i,j,k-1)*wvkm)
 #endif
           !
           dvdtd_xy_s = visc*(dvdxp-dvdxm)*dxi + &
@@ -938,20 +921,12 @@ module mod_mom
           dwdzp = (w_ccp-w_ccc)*dzfi(k+1)
           dwdzm = (w_ccc-w_ccm)*dzfi(k  )
 #if defined(_IBM) && defined(_SIMPLE)
-          if (psi_w(i,j,k) == 0._rp) then ! if not in solid
-           if (psi_w(i+1,j,k) == 1._rp) dwdxp = -2._rp*w(i,j,k)*dxi
-           if (psi_w(i-1,j,k) == 1._rp) dwdxm =  2._rp*w(i,j,k)*dxi
-           if (psi_w(i,j+1,k) == 1._rp) dwdyp = -2._rp*w(i,j,k)*dyi
-           if (psi_w(i,j-1,k) == 1._rp) dwdym =  2._rp*w(i,j,k)*dyi
+          if (psi_w(i,j,k) == 0.0_rp) then ! if not in solid
+           if (psi_w(i+1,j,k) == 1.0_rp) dwdxp = -2.0_rp*w(i,j,k)*dxi
+           if (psi_w(i-1,j,k) == 1.0_rp) dwdxm =  2.0_rp*w(i,j,k)*dxi
+           if (psi_w(i,j+1,k) == 1.0_rp) dwdyp = -2.0_rp*w(i,j,k)*dyi
+           if (psi_w(i,j-1,k) == 1.0_rp) dwdym =  2.0_rp*w(i,j,k)*dyi
           endif
-          ! dwdxp = dwdxp - ((1. - psi_v(i,j,k))*psi_v(i+1,j,k)*dwdxp) &
-                        ! + ((1. - psi_v(i,j,k))*psi_v(i+1,j,k)*(-2._rp*w(i,j,k)*dxi))
-          ! dwdxm = dwdxm - ((1. - psi_v(i,j,k))*psi_v(i-1,j,k)*dwdxm) &
-                        ! + ((1. - psi_v(i,j,k))*psi_v(i-1,j,k)*( 2._rp*w(i,j,k)*dxi))
-          ! dwdyp = dwdyp - ((1. - psi_v(i,j,k))*psi_v(i,j,k+1)*dwdyp) &
-                        ! + ((1. - psi_v(i,j,k))*psi_v(i,j,k+1)*(-2._rp*w(i,j,k)*dyi))
-          ! dwdym = dwdym - ((1. - psi_v(i,j,k))*psi_v(i,j,k-1)*dwdym) &
-                        ! + ((1. - psi_v(i,j,k))*psi_v(i,j,k-1)*( 2._rp*w(i,j,k)*dyi))
 #endif
           !
           ! z advection
@@ -963,16 +938,12 @@ module mod_mom
           wwkp  = 0.25_rp*(w_ccc+w_ccp)*(w_ccc+w_ccp)
           wwkm  = 0.25_rp*(w_ccc+w_ccm)*(w_ccc+w_ccm)
 #if defined(_IBM) && defined(_SIMPLE)
-          if (psi_w(i,j,k) == 0._rp) then ! if not in solid
-           if (psi_w(i+1,j,k) == 1._rp) uwip = 0._rp
-           if (psi_w(i-1,j,k) == 1._rp) uwim = 0._rp
-           if (psi_w(i,j+1,k) == 1._rp) vwjp = 0._rp
-           if (psi_w(i,j-1,k) == 1._rp) vwjm = 0._rp
+          if (psi_w(i,j,k) == 0.0_rp) then ! if not in solid
+           if (psi_w(i+1,j,k) == 1.0_rp) uwip = 0.0_rp
+           if (psi_w(i-1,j,k) == 1.0_rp) uwim = 0.0_rp
+           if (psi_w(i,j+1,k) == 1.0_rp) vwjp = 0.0_rp
+           if (psi_w(i,j-1,k) == 1.0_rp) vwjm = 0.0_rp
           endif
-          ! uwip = uvip - ((1. - psi_w(i,j,k))*psi_w(i+1,j,k)*uwip)
-          ! uwim = uwim - ((1. - psi_w(i,j,k))*psi_w(i-1,j,k)*uwim)
-          ! vwjp = vwjp - ((1. - psi_w(i,j,k))*psi_w(i,j+1,k)*vwjp)
-          ! vwjm = vwjm - ((1. - psi_w(i,j,k))*psi_w(i,j-1,k)*vwjm)
 #endif
           !
           dwdtd_xy_s = visc*(dwdxp-dwdxm)*dxi + &

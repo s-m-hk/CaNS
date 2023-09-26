@@ -53,12 +53,12 @@ module mod_initflow
       call poiseuille(n(3),zclzi,ubulk,u1d)
       is_mean=.true.
     case('tbl')
-      call temporal_bl(n(3),zclzi*lz,1._rp,visc,uref,u1d)
+      call temporal_bl(n(3),zclzi*lz,1.0_rp,visc,uref,u1d)
     case('iop') ! reversed 'poi'
       call poiseuille(n(3),zclzi,ubulk,u1d)
       u1d(:) = u1d(:) - ubulk
     case('zer')
-      u1d(:) = 0.
+      u1d(:) = 0.0_rp
     case('uni')
       u1d(:) = uref
     case('log')
@@ -78,17 +78,17 @@ module mod_initflow
       is_mean = .true.
     case('tgv')
       do k=1,n(3)
-        zc = zclzi(k)*2.*pi
+        zc = zclzi(k)*2.0*pi
         do j=1,n(2)
-          yc = (j+lo(2)-1-.5)*dy/ly*2.*pi
-          yf = (j+lo(2)-1-.0)*dy/ly*2.*pi
+          yc = (j+lo(2)-1-0.5_rp)*dy/ly*2.0_rp*pi
+          yf = (j+lo(2)-1-0.0_rp)*dy/ly*2.0_rp*pi
           do i=1,n(1)
-            xc = (i+lo(1)-1-.5)*dx/lx*2.*pi
-            xf = (i+lo(1)-1-.0)*dx/lx*2.*pi
+            xc = (i+lo(1)-1-0.5_rp)*dx/lx*2.0_rp*pi
+            xf = (i+lo(1)-1-0.0_rp)*dx/lx*2.0_rp*pi
             u(i,j,k) =  sin(xf)*cos(yc)*cos(zc)*uref
             v(i,j,k) = -cos(xc)*sin(yf)*cos(zc)*uref
-            w(i,j,k) = 0.
-            p(i,j,k) = 0.!(cos(2.*xc)+cos(2.*yc))*(cos(2.*zc)+2.)/16.*uref**2
+            w(i,j,k) = 0.0_rp
+            p(i,j,k) = 0.0_rp!(cos(2.*xc)+cos(2.*yc))*(cos(2.*zc)+2.)/16.*uref**2
           end do
         end do
       end do
@@ -96,25 +96,25 @@ module mod_initflow
       do k=1,n(3)
         zc = zclzi(k)
         do j=1,n(2)
-          yc = (j+lo(2)-1-.5)*dy
-          yf = (j+lo(2)-1-.0)*dy
+          yc = (j+lo(2)-1-0.5_rp)*dy
+          yf = (j+lo(2)-1-0.0_rp)*dy
           do i=1,n(1)
-            xc = (i+lo(1)-1-.5)*dx
-            xf = (i+lo(1)-1-.0)*dx
+            xc = (i+lo(1)-1-0.5_rp)*dx
+            xf = (i+lo(1)-1-0.0_rp)*dx
             u(i,j,k) =  cos(xf)*sin(yc)*uref
             v(i,j,k) = -sin(xc)*cos(yf)*uref
-            w(i,j,k) = 0.
-            p(i,j,k) = -(cos(2.*xc)+cos(2.*yc))/4.*uref**2
+            w(i,j,k) = 0.0_rp
+            p(i,j,k) = -(cos(2.0_rp*xc)+cos(2.0_rp*yc))/4.0_rp*uref**2
           end do
         end do
       end do
     case('pdc')
       if(is_wallturb) then ! turbulent flow
         retau = uref*lref/visc
-        reb   = (retau/.09)**(1./.88)
-        ubulk = (reb/2.)/retau*uref
+        reb   = (retau/0.09_rp)**(1.0_rp/0.88_rp)
+        ubulk = (reb/2.0_rp)/retau*uref
       else                 ! laminar flow
-        ubulk = (bforce(1)*lref**2/(3.*visc))
+        ubulk = (bforce(1)*lref**2/(3.0_rp*visc))
       end if
       call poiseuille(n(3),zclzi,ubulk,u1d)
       is_mean=.true.
@@ -131,17 +131,17 @@ module mod_initflow
         do j=1,n(2)
           do i=1,n(1)
             u(i,j,k) = u1d(k)
-            v(i,j,k) = 0.
-            w(i,j,k) = 0.
-            p(i,j,k) = 0.
+            v(i,j,k) = 0.0_rp
+            w(i,j,k) = 0.0_rp
+            p(i,j,k) = 0.0_rp
           end do
         end do
       end do
     end if
     if(is_noise) then
-      call add_noise(ng,lo,123,.05_rp,u(1:n(1),1:n(2),1:n(3)))
-      call add_noise(ng,lo,456,.05_rp,v(1:n(1),1:n(2),1:n(3)))
-      call add_noise(ng,lo,789,.05_rp,w(1:n(1),1:n(2),1:n(3)))
+      call add_noise(ng,lo,123,0.05_rp,u(1:n(1),1:n(2),1:n(3)))
+      call add_noise(ng,lo,456,0.05_rp,v(1:n(1),1:n(2),1:n(3)))
+      call add_noise(ng,lo,789,0.05_rp,w(1:n(1),1:n(2),1:n(3)))
     end if
     if(is_mean) then
       call set_mean(n,ubulk,dzflzi*(dx/lx)*(dy/ly),u(1:n(1),1:n(2),1:n(3)))
@@ -159,18 +159,18 @@ module mod_initflow
       ! see Henningson and Kim, JFM 1991
       !
       do k=1,n(3)
-        zc = 2.*zclzi(k) - 1. ! z rescaled to be between -1 and +1
-        zf = 2.*(zclzi(k) + .5*dzflzi(k)) - 1.
+        zc = 2.0_rp*zclzi(k) - 1.0_rp ! z rescaled to be between -1 and +1
+        zf = 2.0_rp*(zclzi(k) + 0.5_rp*dzflzi(k)) - 1.0_rp
         do j=1,n(2)
-          yc = ((lo(2)-1+j-0.5)*dy-.5*ly)*2./lz
-          yf = ((lo(2)-1+j-0.0)*dy-.5*ly)*2./lz
+          yc = ((lo(2)-1+j-0.5_rp)*dy-0.5_rp*ly)*2.0_rp/lz
+          yf = ((lo(2)-1+j-0.0_rp)*dy-0.5_rp*ly)*2.0_rp/lz
           do i=1,n(1)
-            xc = ((lo(1)-1+i-0.5)*dx-.5*lx)*2./lz
-            xf = ((lo(1)-1+i-0.0)*dx-.5*lx)*2./lz
+            xc = ((lo(1)-1+i-0.5_rp)*dx-0.5_rp*lx)*2.0_rp/lz
+            xf = ((lo(1)-1+i-0.0_rp)*dx-0.5_rp*lx)*2.0_rp/lz
             !u(i,j,k) = u1d(k)
-            v(i,j,k) = -1. * gxy(yf,xc)*dfz(zc) * ubulk * 1.5
-            w(i,j,k) =  1. * fz(zf)*dgxy(yc,xc) * ubulk * 1.5
-            p(i,j,k) = 0.
+            v(i,j,k) = -1.0_rp * gxy(yf,xc)*dfz(zc) * ubulk * 1.5_rp
+            w(i,j,k) =  1.0_rp * fz(zf)*dgxy(yc,xc) * ubulk * 1.5_rp
+            p(i,j,k) = 0.0_rp
           end do
         end do
       end do
@@ -200,38 +200,73 @@ module mod_initflow
   end subroutine initflow
   !
 #if defined(_HEAT_TRANSFER)
-  subroutine inittmp(initmp,nx,ny,nz,tmp)
+  subroutine inittmp(initmp,nh_s,zc,lz,ng,u,tmp)
     !
     ! computes initial conditions for the temperature field
     !
     implicit none
     !
     character(len=3), intent(in )                                     :: initmp
-    integer         , intent(in )                                     :: nx,ny,nz
-    real(rp)        , intent(out), dimension(-2:,-2:,-2:)             :: tmp
-    !
+    integer         , intent(in )                                     :: nh_s
+    real(rp)        , intent(in), dimension(0:)                       :: zc
+    real(rp)        , intent(in)                                      :: lz
+    integer         , intent(in), dimension(3)                        :: ng
+    real(rp)        , intent(in), dimension(0:,0:,0:)                 :: u
+    real(rp)        , intent(out), dimension(1-nh_s:,1-nh_s:,1-nh_s:) :: tmp
+    real(rp)                                                          :: z, uc
+    integer, dimension(3) :: n
     integer :: i,j,k
     !
+    n(:) = shape(u) - 2*1
+    !
     select case(initmp)
+    case('zer')
+      do k=1,n(3)
+        do j=1,n(2)
+          do i=1,n(1)
+            tmp(i,j,k) = 0.0_rp
+          enddo
+        enddo
+      enddo
+    !
     case('uni')
-      do k=1,nz
-        do j=1,ny
-          do i=1,nx
+      do k=1,n(3)
+        do j=1,n(2)
+          do i=1,n(1)
             tmp(i,j,k) = tg0
           enddo
         enddo
       enddo
-      !
+    !
+    case('lin')
+      do k=1,n(3)
+       z = zc(k)
+        do j=1,n(2)
+          do i=1,n(1)
+            tmp(i,j,k) = (lz - z)/lz
+          enddo
+        enddo
+      enddo
+    !
+    case('vel')
+      do k=1,n(3)
+        do j=1,n(2)
+          do i=1,n(1)
+            uc = 0.5_rp*(u(i-1,j,k)+u(i,j,k))
+            tmp(i,j,k) = uc
+          enddo
+        enddo
+      enddo
+    !
     case default
       if(myid.eq.0) print*, 'ERROR: invalid name for initial temperature field'
       if(myid.eq.0) print*, ''
       if(myid.eq.0) print*, '****** Simulation aborted due to errors in input file ******'
       if(myid.eq.0) print*, '       check heat_transfer.in'
       call MPI_FINALIZE(ierr)
-      call exit
+      error stop
     end select
     !
-    return
   end subroutine inittmp
 #endif
   !
@@ -260,7 +295,7 @@ module mod_initflow
           if(ii >= 1.and.ii <= n(1) .and. &
              jj >= 1.and.jj <= n(2) .and. &
              kk >= 1.and.kk <= n(3) ) then
-             p(ii,jj,kk) = p(ii,jj,kk) + 2.*(rn-.5)*norm
+             p(ii,jj,kk) = p(ii,jj,kk) + 2.0_rp*(rn-0.5_rp)*norm
           end if
         end do
       end do
@@ -275,7 +310,7 @@ module mod_initflow
   real(rp), intent(inout), dimension(:,:,:) :: p
   real(rp) :: meanold
   integer :: i,j,k
-  meanold = 0.
+  meanold = 0.0_rp
   !$OMP PARALLEL DO DEFAULT(none) &
   !$OMP SHARED(n,p,grid_vol_ratio) &
   !$OMP REDUCTION(+:meanold)
@@ -288,7 +323,7 @@ module mod_initflow
   end do
   call MPI_ALLREDUCE(MPI_IN_PLACE,meanold,1,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
   !
-  if(meanold /= 0.) then
+  if(meanold /= 0.0_rp) then
     !$OMP PARALLEL WORKSHARE
     p(:,:,:) = p(:,:,:)/meanold*mean
     !$OMP END PARALLEL WORKSHARE
@@ -308,7 +343,7 @@ module mod_initflow
     real(rp) :: z
     do k=1,n
       z    = zc(k)
-      p(k) = .5*(1.-2.*z)*norm
+      p(k) = 0.5_rp*(1.0_rp-2.0_rp*z)*norm
     end do
   end subroutine couette
   !
@@ -325,7 +360,7 @@ module mod_initflow
     !
     do k=1,n
       z    = zc(k)
-      p(k) = 6.*z*(1.-z)*norm
+      p(k) = 6.0_rp*z*(1.0_rp-z)*norm
     end do
   end subroutine poiseuille
   !
@@ -341,9 +376,9 @@ module mod_initflow
     ! temporal boudary layer profile
     ! with thickness d, viscosity nu, and wall velocity norm (at z=0)
     !
-    theta = 54.*nu/norm
+    theta = 54.0_rp*nu/norm
     do k=1,n
-      p(k)=(0.5+(0.5)*tanh((d/(2.*theta))*(1.-zc(k)/d)))*norm
+      p(k)=(0.5_rp+(0.5_rp)*tanh((d/(2.0_rp*theta))*(1.0_rp-zc(k)/d)))*norm
     end do
   end subroutine temporal_bl
   !
@@ -355,12 +390,12 @@ module mod_initflow
     real(rp), intent(out), dimension(n) :: p
     integer :: k
     real(rp) :: z,retau ! z/lz and bulk Reynolds number
-    retau = 0.09*reb**(0.88) ! from Pope's book
+    retau = 0.09_rp*reb**(0.88_rp) ! from Pope's book
     do k=1,n
-      z    = zc(k)*2.*retau
-      if(z >= retau) z = 2.*retau-z
-      p(k) = 2.5*log(z) + 5.5
-      if (z <= 11.6) p(k)=z
+      z    = zc(k)*2.0_rp*retau
+      if(z >= retau) z = 2.0_rp*retau-z
+      p(k) = 2.5_rp*log(z) + 5.5_rp
+      if (z <= 11.6_rp) p(k)=z
     end do
   end subroutine log_profile
   !
@@ -370,24 +405,24 @@ module mod_initflow
   function fz(zc)
   real(rp), intent(in) :: zc
   real(rp) :: fz
-    fz = ((1.-zc**2)**2)
+    fz = ((1.0_rp-zc**2)**2)
   end function
   !
   function dfz(zc)
   real(rp), intent(in) :: zc
   real(rp) :: dfz
-    dfz = -4.*zc*(1.-zc**2)
+    dfz = -4.0_rp*zc*(1.0_rp-zc**2)
   end function
   !
   function gxy(xc,yc)
   real(rp), intent(in) :: xc,yc
   real(rp) :: gxy
-    gxy = yc*exp(-4.*(4.*xc**2+yc**2))
+    gxy = yc*exp(-4.0_rp*(4.0_rp*xc**2+yc**2))
   end function
   !
   function dgxy(xc,yc)
   real(rp), intent(in) :: xc,yc
   real(rp) :: dgxy
-    dgxy = exp(-4.*(4.*xc**2+yc**2))*(1.-8.*yc**2)
+    dgxy = exp(-4.0_rp*(4.0_rp*xc**2+yc**2))*(1.0_rp-8.0_rp*yc**2)
   end function
 end module mod_initflow
