@@ -316,7 +316,8 @@ module mod_rk
     end do
 #endif
   end subroutine rk
-  subroutine rk_scal(rkpar,n,nh_v,nh_s,dli,zc,zf,dzci,dzfi,grid_vol_ratio_f,dt,l,u,v,w,alph_f,is_forced,velf, &
+  subroutine rk_scal(rkpar,n,nh_v,nh_s,dli,zc,zf,dzci,dzfi,grid_vol_ratio_f,dt,l,u,v,w,alph_f, &
+                     is_bound,is_forced,is_cmpt_wallflux,velf, &
                      dl,dzc,dzf, &
 #if defined(_IBM)
                      alph_s,al, &
@@ -325,7 +326,7 @@ module mod_rk
                      fibm, &
 #endif
 #endif
-                     s,f)
+                     s,f,fluxo,wall_flux)
     !
     ! low-storage 3rd-order Runge-Kutta scheme
     ! for time integration of the scalar field.
@@ -337,18 +338,22 @@ module mod_rk
     real(rp), intent(in   ), dimension(3)  :: dli,l
     real(rp), intent(in   ), dimension(0:) :: zc,zf,dzci,dzfi
     real(rp), intent(in   ), dimension(0:) :: grid_vol_ratio_f
-    real(rp), intent(inout), dimension(4)  :: f
+    logical , intent(in   ), dimension(0:1,3)    :: is_bound
 #if defined(_HEAT_TRANSFER)
     logical , intent(in   ), dimension(4)        :: is_forced
 #else
     logical , intent(in   ), dimension(3)        :: is_forced
 #endif
+    logical , intent(in   )                      :: is_cmpt_wallflux
     real(rp), intent(in   ), dimension(3)  :: velf
     real(rp), intent(in   ), dimension(3)  :: dl
     real(rp), intent(in   ), dimension(0:) :: dzc,dzf
     real(rp), intent(in   ) :: alph_f,dt
     real(rp), intent(in   ), dimension(0:,0:,0:) :: u,v,w
     real(rp), intent(inout), dimension(1-nh_s:,1-nh_s:,1-nh_s:) :: s
+    real(rp), intent(inout), dimension(4) :: f
+    real(rp), intent(inout), dimension(3) :: fluxo
+    real(rp), intent(out)                 :: wall_flux
     real(rp), target     , allocatable, dimension(:,:,:), save :: dsdtrk_t, dsdtrko_t
     real(rp), pointer    , contiguous , dimension(:,:,:), save :: dsdtrk, dsdtrko
 #if defined(_IMPDIFF)
@@ -363,7 +368,8 @@ module mod_rk
     real(rp), intent(out  ), dimension(4) :: fibm
 #endif
 #endif
-    real(rp) :: mean,ssource
+    real(rp), dimension(3) :: flux
+    real(rp) :: mean
     integer :: i,j,k
     logical, save :: is_first = .true.
     !
@@ -378,7 +384,6 @@ module mod_rk
       allocate(dsdtrk_t(n(1),n(2),n(3)),dsdtrko_t(n(1),n(2),n(3)))
       !$acc enter data create(dsdtrk_t, dsdtrko_t) async(1)
       !$acc kernels default(present) async(1)
-      dsdtrk_t(:,:,:)  = 0.0_rp
       dsdtrko_t(:,:,:) = 0.0_rp
       !$acc end kernels
       dsdtrk  => dsdtrk_t
@@ -388,11 +393,11 @@ module mod_rk
       !$acc enter data create(dsdtrkd) async(1)
 #endif
     end if
-    ! if(is_cmpt_wallflux) then
-      ! call cmpt_scalflux(n,is_bound,l,dli,dzci,dzfi,alpha,flux)
-      ! f = (factor1*sum(flux(:)/l(:)) + factor2*sum(fluxo(:)/l(:)))
-      ! fluxo(:) = flux(:)
-    ! end if
+    if(is_cmpt_wallflux) then
+      call cmpt_scalflux(n,is_bound,l,dli,dzci,dzfi,alph_f,s,flux)
+      wall_flux = (factor1*sum(flux(:)/l(:)) + factor2*sum(fluxo(:)/l(:)))
+      fluxo(:) = flux(:)
+    end if
     call scal(n(1),n(2),n(3),dli(1),dli(2),dli(3),dzci,dzfi,alph_f, &
 #if defined(_IBM)
               al,psi_s, &
@@ -402,22 +407,12 @@ module mod_rk
               dsdtrkd, &
 #endif
               dsdtrk)
-#if defined(_HEAT_SOURCE) && !defined(_IBM)
-    ! call bulk_mean(n,nh_v,grid_vol_ratio_f,u,mean)
-#elif defined(_HEAT_SOURCE) && defined(_IBM)
-    ! call bulk_mean_ibm(n,dl,dzf,psi_u,u,mean)
-#endif
     !$acc parallel loop collapse(3) default(present) async(1)
     !$OMP PARALLEL DO COLLAPSE(3) DEFAULT(shared)
     do k=1,n(3)
       do j=1,n(2)
         do i=1,n(1)
-#if defined(_HEAT_SOURCE)
-          ssource  = 0.5_rp*(u(i-1,j,k) + u(i,j,k))
-#else
-          ssource  = 0.0_rp
-#endif
-          s(i,j,k) = s(i,j,k) + factor1*dsdtrk(i,j,k) + factor2*dsdtrko(i,j,k) + factor12*ssource
+          s(i,j,k) = s(i,j,k) + factor1*dsdtrk(i,j,k) + factor2*dsdtrko(i,j,k)! + factor12*ssource
 #if defined(_IMPDIFF)
           s(i,j,k) = s(i,j,k) + factor12*dsdtrkd(i,j,k)
 #endif

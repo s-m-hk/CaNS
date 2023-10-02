@@ -38,12 +38,18 @@ module mod_scal
     integer :: i,j,k
     real(rp) :: usip,usim,vsjp,vsjm,wskp,wskm
     real(rp) :: dsdxp,dsdxm,dsdyp,dsdym,dsdzp,dsdzm
+    real(rp) :: source  
     !
     !$acc parallel loop collapse(3) default(present) private(usip,usim,vsjp,vsjm,wskp,wskm,dsdxp,dsdxm,dsdyp,dsdym,dsdzp,dsdzm) async(1)
     !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)  PRIVATE(usip,usim,vsjp,vsjm,wskp,wskm,dsdxp,dsdxm,dsdyp,dsdym,dsdzp,dsdzm)
     do k=1,nz
       do j=1,ny
         do i=1,nx
+#if defined(_HEAT_SOURCE)
+          source  = u(i,j,k)
+#else
+          source  = 0.0_rp
+#endif
           usim  = 0.5*( s(i-1,j,k)+s(i,j,k) )*u(i-1,j,k)
           usip  = 0.5*( s(i+1,j,k)+s(i,j,k) )*u(i  ,j,k)
           vsjm  = 0.5*( s(i,j-1,k)+s(i,j,k) )*v(i,j-1,k)
@@ -65,11 +71,13 @@ module mod_scal
           !
           dsdt(i,j,k) = dxi*(     -usip + usim ) + &
                         dyi*(     -vsjp + vsjm ) + &
-                        dzfi(k)*( -wskp + wskm )
+                        dzfi(k)*( -wskp + wskm ) + &
+                        source
 #else
           dsdt(i,j,k) = dxi*(     -usip + usim ) + (dsdxp-dsdxm)*dxi + &
                         dyi*(     -vsjp + vsjm ) + (dsdyp-dsdym)*dyi + &
-                        dzfi(k)*( -wskp + wskm ) + (dsdzp-dsdzm)*dzfi(k)
+                        dzfi(k)*( -wskp + wskm ) + (dsdzp-dsdzm)*dzfi(k) + &
+                        source
 #endif
 #else
           dsdxp = (s(i+1,j,k)-s(i  ,j,k))*dxi
@@ -86,11 +94,13 @@ module mod_scal
           !
           dsdt(i,j,k) = dxi*(     -usip + usim ) + &
                         dyi*(     -vsjp + vsjm ) + &
-                        dzfi(k)*( -wskp + wskm )
+                        dzfi(k)*( -wskp + wskm ) + &
+                        source
 #else
           dsdt(i,j,k) = dxi*(     -usip + usim ) + (dsdxp-dsdxm)*alph_f*dxi + &
                         dyi*(     -vsjp + vsjm ) + (dsdyp-dsdym)*alph_f*dyi + &
-                        dzfi(k)*( -wskp + wskm ) + (dsdzp-dsdzm)*alph_f*dzfi(k)
+                        dzfi(k)*( -wskp + wskm ) + (dsdzp-dsdzm)*alph_f*dzfi(k) + &
+                        source
 #endif
 #endif
         end do

@@ -60,7 +60,7 @@ program cans
                                  out2d,out3d,write_log_output,write_visu_2d,write_visu_3d
   use mod_param          , only: lz,uref,lref,rey,visc,small, &
 #if defined(_HEAT_TRANSFER)
-                                 itmp,tg0,alph_f,alph_s,cbctmp,bctmp, &
+                                 itmp,tg0,alph_f,alph_s,cbctmp,bctmp,is_cmpt_wallflux, &
 #if defined(_BOUSSINESQ)
                                  tmp0,beta_th, &
 #endif
@@ -70,6 +70,7 @@ program cans
 #endif
                                  nb,is_bound,cbcvel,bcvel,cbcpre,bcpre, &
                                  ioutput,icheck,iout0d,iout1d,iout2d,iout3d,ioutLPP,isave, &
+                                 output_1d,output_2d,output_3d, &
                                  nstep,time_max,tw_max,stop_type,restart,is_overwrite_save,reset_time,nsaves_max, &
                                  rkcoeff,   &
                                  datadir,   &
@@ -120,6 +121,10 @@ program cans
 #endif
 #endif
   real(rp), dimension(3) :: tauxo,tauyo,tauzo
+#if defined(_HEAT_TRANSFER)
+  real(rp), dimension(3) :: fluxo
+  real(rp) :: flux
+#endif
   real(rp), dimension(4) :: f
 #if !defined(_OPENACC)
   type(C_PTR), dimension(2,2) :: arrplanp
@@ -357,7 +362,7 @@ allocate(duconv(n(1),n(2),n(3)), &
     close(99)
     open(99,file=trim(datadir)//'grid.out')
     do kk=0,ng(3)+1
-      write(99,*) 0.,zf_g(kk),zc_g(kk),dzf_g(kk),dzc_g(kk)
+      write(99,'(5E16.7e3)') 0.,zf_g(kk),zc_g(kk),dzf_g(kk),dzc_g(kk)
     end do
     close(99)
     open(99,file=trim(datadir)//'geometry.out')
@@ -476,12 +481,12 @@ allocate(duconv(n(1),n(2),n(3)), &
     !
     ! deallocate(tmp)
 #endif
+    if(reset_time) then
+      istep = 0
+      time = 0.0_rp
+    endif
     if(myid == 0) print*, '*** Checkpoint loaded at time = ', time, 'time step = ', istep, '. ***'
   end if
-  if(reset_time) then
-    istep = 0
-    time = 0.0_rp
-  endif
 #if defined(_IBM)
 !$acc update self(lo,hi,n,zc,zf,dzc,dzf,dzci,dzfi,dl,dli,l)
   if(myid == 0) print*, '*** Initializing IBM ***'
@@ -616,6 +621,9 @@ allocate(duconv(n(1),n(2),n(3)), &
     tauxo(:) = 0.0_rp
     tauyo(:) = 0.0_rp
     tauzo(:) = 0.0_rp
+#if defined(_HEAT_TRANSFER)
+    fluxo(:) = 0.0_rp
+#endif
 #if defined(_IBM)
     fibmtot(:) = 0.0_rp
 #endif
@@ -623,7 +631,8 @@ allocate(duconv(n(1),n(2),n(3)), &
       dtrk = sum(rkcoeff(:,irk))*dt
       dtrki = dtrk**(-1)
 #if defined(_HEAT_TRANSFER)
-      call rk_scal(rkcoeff(:,irk),n,nh_v,nh_s,dli,zc,zf,dzci,dzfi,grid_vol_ratio_f,dt,l,u,v,w,alph_f,is_forced,velf, &
+      call rk_scal(rkcoeff(:,irk),n,nh_v,nh_s,dli,zc,zf,dzci,dzfi,grid_vol_ratio_f,dt,l,u,v,w,alph_f, &
+                   is_bound,is_forced,is_cmpt_wallflux,velf, &
                    dl,dzc,dzf, &
 #if defined(_IBM)
                    alph_s,al, &
@@ -632,7 +641,7 @@ allocate(duconv(n(1),n(2),n(3)), &
                    fibm, &
 #endif
 #endif
-                   s,f)
+                   s,f,fluxo,flux)
 #if !defined(_IBM)
       block
         real(rp) :: ff
@@ -797,19 +806,19 @@ allocate(duconv(n(1),n(2),n(3)), &
       if(tw    >= tw_max  ) is_done = is_done.or..true.
     end if
     if(mod(istep,icheck) == 0) then
-      if(myid == 0) print*, 'Checking stability and divergence...'
+      if(mod(istep,ioutput) == 0 .and. myid == 0) print*, 'Checking stability and divergence...'
       call chkdt(n,dl,dzci,dzfi,visc,u,v,w,dtmax)
       dt  = min(cfl*dtmax,dtmin)
-      if(myid == 0) print*, 'dtmax = ', dtmax, 'dt = ',dt
+      if(mod(istep,ioutput) == 0 .and. myid == 0) print*, 'dtmax = ', dtmax, 'dt = ',dt
       ! if(dtmax < small) then
         ! if(myid == 0) print*, 'ERROR: time step is too small.'
         ! if(myid == 0) print*, 'Aborting...'
         ! is_done = .true.
         ! kill = .true.
       ! end if
-      dti = 1./dt
+      dti = 1._rp/dt
       call chkdiv(lo,hi,dli,dzfi,u,v,w,divtot,divmax)
-      if(myid == 0) print*, 'Total divergence = ', divtot, '| Maximum divergence = ', divmax
+      if(mod(istep,ioutput) == 0 .and. myid == 0) print*, 'Total divergence = ', divtot, '| Maximum divergence = ', divmax
 #if !defined(_MASK_DIVERGENCE_CHECK)
       if(divmax > small.or.is_nan(divtot)) then
         if(myid == 0) print*, 'ERROR: maximum divergence is too large.'
@@ -824,33 +833,33 @@ allocate(duconv(n(1),n(2),n(3)), &
     !
     if(mod(istep,iout0d) == 0) then
       !allocate(var(4))
-      var(1) = 1.*istep
+      var(1) = 1._rp*istep
       var(2) = dt
       var(3) = time
       call out0d(trim(datadir)//'time.out',3,var)
       !
-      if(any(is_forced(:)).or.any(abs(bforce(:)) > 0.)) then
-        meanvelu = 0.
-        meanvelv = 0.
-        meanvelw = 0.
+      if(any(is_forced(:)).or.any(abs(bforce(:)) > 0._rp)) then
+        meanvelu = 0.0_rp
+        meanvelv = 0.0_rp
+        meanvelw = 0.0_rp
 #if !defined(_IBM)
-        if(is_forced(1).or.abs(bforce(1)) > 0.) then
+        if(is_forced(1).or.abs(bforce(1)) > 0._rp) then
           call bulk_mean(n,nh_v,grid_vol_ratio_f,u,meanvelu)
         end if
-        if(is_forced(2).or.abs(bforce(2)) > 0.) then
+        if(is_forced(2).or.abs(bforce(2)) > 0._rp) then
           call bulk_mean(n,nh_v,grid_vol_ratio_f,v,meanvelv)
         end if
-        if(is_forced(3).or.abs(bforce(3)) > 0.) then
+        if(is_forced(3).or.abs(bforce(3)) > 0._rp) then
           call bulk_mean(n,nh_v,grid_vol_ratio_c,w,meanvelw)
         end if
 #else
-        if(is_forced(1).or.abs(bforce(1)).gt.0.) then
+        if(is_forced(1).or.abs(bforce(1)).gt.0._rp) then
           call bulk_mean_ibm(n,dl,dzf,psi_u,u,meanvelu)
         endif
-        if(is_forced(2).or.abs(bforce(2)).gt.0.) then
+        if(is_forced(2).or.abs(bforce(2)).gt.0._rp) then
           call bulk_mean_ibm(n,dl,dzf,psi_v,v,meanvelv)
         endif
-        if(is_forced(3).or.abs(bforce(3)).gt.0.) then
+        if(is_forced(3).or.abs(bforce(3)).gt.0._rp) then
           call bulk_mean_ibm(n,dl,dzc,psi_w,w,meanvelw)
         endif
 #endif
@@ -870,23 +879,29 @@ allocate(duconv(n(1),n(2),n(3)), &
       call out0d(trim(datadir)//'forcing_ibm.out',4,var)
 #endif
 #endif
+#if defined(_HEAT_TRANSFER)
+      if(is_cmpt_wallflux) then
+       var(1)  = flux
+       call out0d(trim(datadir)//'heat_flux.out',1,var)
+      endif
+#endif
     end if
     write(fldnum,'(i7.7)') istep
-    if(mod(istep,iout1d) == 0) then
+    if(output_1d.and.mod(istep,iout1d) == 0) then
       !$acc update self(u,v,w,p)
 #if defined(_HEAT_TRANSFER)
       !$acc update self(s)
 #endif
       include 'out1d.h90'
     end if
-    if(mod(istep,iout2d) == 0) then
+    if(output_2d.and.mod(istep,iout2d) == 0) then
       !$acc update self(u,v,w,p)
 #if defined(_HEAT_TRANSFER)
       !$acc update self(s)
 #endif
       include 'out2d.h90'
     end if
-    if(mod(istep,iout3d) == 0) then
+    if(output_3d.and.mod(istep,iout3d) == 0) then
       !$acc update self(u,v,w,p)
 #if defined(_HEAT_TRANSFER)
       !$acc update self(s)
@@ -894,7 +909,7 @@ allocate(duconv(n(1),n(2),n(3)), &
       include 'out3d.h90'
     end if
 #if defined(_LPP)
-    if(mod(istep,ioutLPP) == 0) then
+    if(output_1d.and.mod(istep,ioutLPP) == 0) then
       call outLPP(istep,time,0,ng(1),0,ng(2),0,ng(3))
     endif
 #endif
@@ -908,9 +923,9 @@ allocate(duconv(n(1),n(2),n(3)), &
           savecounter = savecounter + 1
           write(chkptnum,'(i4.4)') savecounter
           filename = 'fld_'//chkptnum//'.bin'
-          var(1) = 1.0_rp*istep
+          var(1) = 1._rp*istep
           var(2) = time
-          var(3) = 1.0_rp*savecounter
+          var(3) = 1._rp*savecounter
           call out0d(trim(datadir)//'log_checkpoints.out',3,var)
         end if
       end if

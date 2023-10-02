@@ -14,7 +14,7 @@ module mod_load
   use mod_utils, only: f_sizeof
   implicit none
   private
-  public load_all,load_one,io_field
+  public load_all,load_one,io_field,io_field_hdf5
   contains
   subroutine load_all(io,filename,comm,ng,nh,lo,hi,time,istep,u,v,w,p)
     !
@@ -515,6 +515,7 @@ module mod_load
     data_offset(:) = starts(:)
     halo_offset(:) = nh(:)
     !
+    call h5open_f(ierr)
     select case(io)
     case('r')
       call h5pcreate_f(H5P_FILE_ACCESS_F,plist_id,ierr)
@@ -606,6 +607,7 @@ module mod_load
         call h5fclose_f(file_id,ierr)
       end if
     end select
+    call h5close_f(ierr)
     !
   end subroutine io_field_hdf5
 #endif

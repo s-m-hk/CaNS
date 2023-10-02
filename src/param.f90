@@ -46,6 +46,7 @@ logical , protected, dimension(3) :: stop_type
 logical , protected :: restart,is_overwrite_save,reset_time
 integer , protected :: nsaves_max
 integer , protected :: ioutput,icheck,iout0d,iout1d,iout2d,iout3d,ioutLPP,isave
+logical , protected :: output_1d,output_2d,output_3d
 !
 integer , dimension(2) :: dims
 !
@@ -73,10 +74,13 @@ real(rp), protected, dimension(3) :: dli
 character(len=1), protected, dimension(0:1,3) :: cbctmp
 real(rp)        , protected, dimension(0:1,3) ::  bctmp
 !
+#if defined(_HEAT_TRANSFER)
 character(len=3), protected       :: itmp
 real(rp), protected               :: alph_f,alph_s,Pr,dr,tg0
 real(rp), protected               :: solidtemp
 real(rp), protected               :: tmp0,beta_th
+logical, protected                :: is_cmpt_wallflux
+#endif
 real(rp), protected               :: solid_height_ratio
 real(rp), protected               :: Rotation_angle
 real(rp), protected               :: sx, sy, sz, depth, rod
@@ -113,6 +117,7 @@ contains
         read(iunit,*,iostat=ierr) stop_type(1),stop_type(2),stop_type(3)
         read(iunit,*,iostat=ierr) restart,is_overwrite_save,nsaves_max,reset_time; if( ierr /= 0 ) nsaves_max = 0 ! a good default, for backward compatibility
         read(iunit,*,iostat=ierr) ioutput,icheck,iout0d,iout1d,iout2d,iout3d,ioutLPP,isave
+        read(iunit,*,iostat=ierr) output_1d,output_2d,output_3d
         read(iunit,*,iostat=ierr) cbcvel(0,1,1),cbcvel(1,1,1),cbcvel(0,2,1),cbcvel(1,2,1),cbcvel(0,3,1),cbcvel(1,3,1)
         read(iunit,*,iostat=ierr) cbcvel(0,1,2),cbcvel(1,1,2),cbcvel(0,2,2),cbcvel(1,2,2),cbcvel(0,3,2),cbcvel(1,3,2)
         read(iunit,*,iostat=ierr) cbcvel(0,1,3),cbcvel(1,1,3),cbcvel(0,2,3),cbcvel(1,2,3),cbcvel(0,3,3),cbcvel(1,3,3)
@@ -170,6 +175,7 @@ contains
       read(iunit,*,iostat=ierr) solidtemp
       read(iunit,*,iostat=ierr) is_forced(4)
       read(iunit,*,iostat=ierr) velf(4)
+      read(iunit,*,iostat=ierr) is_cmpt_wallflux
     else
       if(myid == 0) print*, 'Error reading heat input file' 
       if(myid == 0) print*, 'Aborting...'
@@ -178,9 +184,9 @@ contains
     endif
     close(iunit)
 #endif
-    dx = lx/(1.*itot)
-    dy = ly/(1.*jtot)
-    dz = lz/(1.*ktot)
+    dx = lx/(1._rp*itot)
+    dy = ly/(1._rp*jtot)
+    dz = lz/(1._rp*ktot)
     dxi = dx**(-1)
     dyi = dy**(-1)
     dzi = dz**(-1)

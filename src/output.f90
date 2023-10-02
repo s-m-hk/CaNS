@@ -170,7 +170,7 @@ module mod_output
 #if defined(_USE_HDF5)
     block
       use decomp_2d
-      use mod_load!, only: io_field_hdf5
+      use mod_load, only: io_field_hdf5
       integer, dimension(3) :: ng
       !
       select case(inorm)
@@ -229,7 +229,11 @@ module mod_output
     !
     block
       use decomp_2d
-      use mod_load, only: io_field!, io_field_hdf5
+#if defined(_USE_HDF5)
+      use mod_load, only: io_field, io_field_hdf5
+#else
+      use mod_load, only: io_field
+#endif
       integer, dimension(3) :: ng,lo,hi
       ng(:) = [nx_global,ny_global,nz_global]
       select case(ipencil)
