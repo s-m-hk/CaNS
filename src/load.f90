@@ -14,7 +14,11 @@ module mod_load
   use mod_utils, only: f_sizeof
   implicit none
   private
+#if defined(_USE_HDF5)
   public load_all,load_one,io_field,io_field_hdf5
+#else
+  public load_all,load_one,io_field
+#endif
   contains
   subroutine load_all(io,filename,comm,ng,nh,lo,hi,time,istep,u,v,w,p)
     !

@@ -113,6 +113,9 @@ DEFINES += -D_TIMING
 endif
 ifeq ($(strip $(IMPDIFF)),1)
 DEFINES += -D_IMPDIFF
+ifeq ($(strip $(CONSTANT_COEFFS_DIFF)),1)
+DEFINES += -D_CONSTANT_COEFFS_DIFF
+endif
 endif
 ifeq ($(strip $(IMPDIFF_1D)),1)
 DEFINES += -D_IMPDIFF -D_IMPDIFF_1D

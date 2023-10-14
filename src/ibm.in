@@ -1,6 +1,6 @@
-Lattice          !surface_type
-1                !solid_height_ratio
-0.               !Rotation_angle
-0.1 0.1 0.1      !sx, sy, sz (pitch lengths for lattice structure)
-0.1              !rod (rod/filament thickness of lattice structure)
-0.3              !depth (depth of the lattice layer)
+Lattice               !surface_type
+1                     !solid_height_ratio
+0.                    !Rotation_angle
+0.0 0.0 0.0           !sx, sy, sz        (pitch lengths for lattice structure)
+0.0                   !rod               (rod thickness for lattice structure)
+0.3                   !depth             (depth/thickness of structure)

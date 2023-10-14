@@ -5,11 +5,11 @@ module mod_forcing
   use mod_common_mpi, only: ierr
   implicit none
   private
-  public force_vel,force_scal,force_bulk_vel,bulk_mean_ibm
+  public ib_force,force_vel,force_scal,force_bulk_vel,bulk_mean_ibm
   contains
-  subroutine force_vel(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fibm)
+  subroutine ib_force(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fx,fy,fz,fibm)
     !
-    ! Force velocity field using volume-penalization IBM:
+    ! Calculate volume-penalization IBM force:
     ! the force is proportional to the volume fraction of
     ! solid in a grid cell i,j,k.
     ! The volume fraction is defined in the cell centers and
@@ -17,8 +17,6 @@ module mod_forcing
     ! components are defined. This results in a smoothing of the
     ! local volume fraction field.
     ! 
-    ! Note: for some systems it may be convenient to save the force
-    !       distribution
     !
     implicit none
     integer , intent(in), dimension(3) :: n
@@ -26,8 +24,9 @@ module mod_forcing
     real(rp), intent(in   ), dimension(0:) :: dzc,dzf
     real(rp), intent(in   ), dimension(0:,0:,0:) :: psi_u,psi_v,psi_w
     real(rp), intent(inout), dimension(0:,0:,0:) :: u,v,w
+    real(rp), intent(out  ), dimension(0:,0:,0:) :: fx,fy,fz
     real(rp), intent(out  ), dimension(4) :: fibm
-    real(rp) :: psix,psiy,psiz,fx,fy,fz,fxtot,fytot,fztot,dx,dy
+    real(rp) :: psix,psiy,psiz,fxtot,fytot,fztot,dx,dy
     integer :: i,j,k,nx,ny,nz
     !
     nx = n(1)
@@ -35,14 +34,14 @@ module mod_forcing
     nz = n(3)
     dx = dl(1)
     dy = dl(2)
-    fxtot = 0._rp
-    fytot = 0._rp
-    fztot = 0._rp
+    fxtot = 0.0_rp
+    fytot = 0.0_rp
+    fztot = 0.0_rp
     !$acc data copy(fxtot,fytot,fztot) async(1)
-    !$acc parallel loop collapse(3) default(present) private(psix,psiy,psiz,fx,fy,fz) reduction(+:fxtot,fytot,fztot) async(1)
+    !$acc parallel loop collapse(3) default(present) private(psix,psiy,psiz) reduction(+:fxtot,fytot,fztot) async(1)
     !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP SHARED(n,u,v,w,psi_u,psi_v,psi_w,dl,dzc,dzf) &
-    !$OMP PRIVATE(i,j,k,fx,fy,fz,psix,psiy,psiz) &
+    !$OMP SHARED(n,u,v,w,fx,fy,fz,psi_u,psi_v,psi_w,dl,dzc,dzf) &
+    !$OMP PRIVATE(i,j,k,psix,psiy,psiz) &
     !$OMP REDUCTION(+:fxtot,fytot,fztot)
     do k=1,nz
       do j=1,ny
@@ -50,15 +49,15 @@ module mod_forcing
           psix  = psi_u(i,j,k)
           psiy  = psi_v(i,j,k)
           psiz  = psi_w(i,j,k)
-          fx    = - u(i,j,k)*psix ! (u(i,j,k)*(1.-psix)-u(i,j,k))*dti
-          fy    = - v(i,j,k)*psiy ! (v(i,j,k)*(1.-psiy)-v(i,j,k))*dti
-          fz    = - w(i,j,k)*psiz ! (w(i,j,k)*(1.-psiz)-w(i,j,k))*dti
-          u(i,j,k) = u(i,j,k) + fx
-          v(i,j,k) = v(i,j,k) + fy
-          w(i,j,k) = w(i,j,k) + fz
-          fxtot = fxtot + fx*dx*dy*dzf(k)
-          fytot = fytot + fy*dx*dy*dzf(k)
-          fztot = fztot + fz*dx*dy*dzc(k)
+          fx(i,j,k) = -u(i,j,k)*psix ! (u(i,j,k)*(1.-psix)-u(i,j,k))*dti
+          fy(i,j,k) = -v(i,j,k)*psiy ! (v(i,j,k)*(1.-psiy)-v(i,j,k))*dti
+          fz(i,j,k) = -w(i,j,k)*psiz ! (w(i,j,k)*(1.-psiz)-w(i,j,k))*dti
+          u(i,j,k) = u(i,j,k) + fx(i,j,k)
+          v(i,j,k) = v(i,j,k) + fy(i,j,k)
+          w(i,j,k) = w(i,j,k) + fz(i,j,k)
+          fxtot = fxtot + fx(i,j,k)*dx*dy*dzf(k)
+          fytot = fytot + fy(i,j,k)*dx*dy*dzf(k)
+          fztot = fztot + fz(i,j,k)*dx*dy*dzc(k)
         enddo
       enddo
     enddo
@@ -70,6 +69,35 @@ module mod_forcing
     fibm(1) = fxtot/(l(1)*l(2)*l(3))
     fibm(2) = fytot/(l(1)*l(2)*l(3))
     fibm(3) = fztot/(l(1)*l(2)*l(3))
+  end subroutine ib_force
+  !
+  subroutine force_vel(n,u,v,w,fx,fy,fz)
+    !
+    ! Force velocity field using volume-penalization IBM:
+    ! the force is proportional to the volume fraction of
+    !
+    implicit none
+    integer , intent(in   ), dimension(3) :: n
+    real(rp), intent(inout), dimension(0:,0:,0:) :: u,v,w
+    real(rp), intent(in   ), dimension(0:,0:,0:) :: fx,fy,fz
+    integer :: i,j,k,nx,ny,nz
+    !
+    nx = n(1)
+    ny = n(2)
+    nz = n(3)
+    !$acc parallel loop collapse(3) default(present) async(1)
+    !$OMP PARALLEL DO DEFAULT(none) &
+    !$OMP SHARED(n,u,v,w,fx,fy,fz) &
+    !$OMP PRIVATE(i,j,k)
+    do k=1,nz
+      do j=1,ny
+        do i=1,nx
+          u(i,j,k) = u(i,j,k) + fx(i,j,k)
+          v(i,j,k) = v(i,j,k) + fy(i,j,k)
+          w(i,j,k) = w(i,j,k) + fz(i,j,k)
+        enddo
+      enddo
+    enddo
   end subroutine force_vel
   !
   subroutine force_scal(n,nh_s,dl,dz,l,psi,s,fibm)
@@ -90,7 +118,7 @@ module mod_forcing
     nz = n(3)
     dx = dl(1)
     dy = dl(2)
-    fstot = 0._rp
+    fstot = 0.0_rp
     !$acc data copy(fstot) async(1)
     !$acc parallel loop collapse(3) default(present) private(psis,fs) reduction(+:fstot) async(1)
     !$OMP PARALLEL DO DEFAULT(none) &
@@ -128,28 +156,28 @@ module mod_forcing
     real(rp), intent(in   ) :: velf
     real(rp), intent(inout  ) :: f
     integer :: i,j,k,nx,ny,nz
-    real(rp) :: psis,mean_val,mean_psi,dx,dy
+    real(rp) :: psif,mean_val,mean_psi,dx,dy
     !
     nx = n(1)
     ny = n(2)
     nz = n(3)
     dx = dl(1)
     dy = dl(2)
-    mean_val = 0._rp
-    mean_psi = 0._rp
+    mean_val = 0.0_rp
+    mean_psi = 0.0_rp
     !
     !$acc data copy(mean_val,mean_psi) async(1)
-    !$acc parallel loop collapse(3) default(present) private(psis) reduction(+:mean_val) reduction(+:mean_psi) async(1)
+    !$acc parallel loop collapse(3) default(present) private(psif) reduction(+:mean_val) reduction(+:mean_psi) async(1)
     !$OMP PARALLEL DO DEFAULT(none) &
     !$OMP SHARED(n,psi,p,dl,dz) &
-    !$OMP PRIVATE(i,j,k,psis) &
+    !$OMP PRIVATE(i,j,k,psif) &
     !$OMP REDUCTION(+:mean_val,mean_psi)
     do k=1,nz
       do j=1,ny
         do i=1,nx
-          psis = 1.0_rp - psi(i,j,k)
-          mean_val = mean_val + p(i,j,k)*psis*dx*dy*dz(k)
-          mean_psi = mean_psi + psis*dx*dy*dz(k)
+          psif = 1.0_rp - psi(i,j,k)
+          mean_val = mean_val + p(i,j,k)*psif*dx*dy*dz(k)
+          mean_psi = mean_psi + psif*dx*dy*dz(k)
         enddo
       enddo
     enddo
@@ -158,21 +186,21 @@ module mod_forcing
     call mpi_allreduce(MPI_IN_PLACE,mean_val,1,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
     call mpi_allreduce(MPI_IN_PLACE,mean_psi,1,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
     mean_val = mean_val/mean_psi
-    !$acc parallel loop collapse(3) default(present) private(psis) async(1)
+    !$acc parallel loop collapse(3) default(present) private(psif) async(1)
     !$OMP PARALLEL DO DEFAULT(none) &
     !$OMP SHARED(n,psi,p,mean_val,velf,dl,dz) &
-    !$OMP PRIVATE(i,j,k,psis) &
+    !$OMP PRIVATE(i,j,k,psif) &
     !$OMP REDUCTION(+:f)
     do k=1,nz
       do j=1,ny
         do i=1,nx
 #if defined(_FORCE_FLUID_ONLY)
-          psis = 1._rp-psi(i,j,k) ! (if bulk velocity forced only inside the fluid)
+          psif = 1.0_rp - psi(i,j,k) ! (if bulk velocity forced only inside the fluid)
 #else
-          psis = 1._rp
+          psif = 1.0_rp
 #endif
-          p(i,j,k) = p(i,j,k) + (velf-mean_val)*psis
-          f = f + (velf-mean_val)*psis*dx*dy*dz(k)
+          ! p(i,j,k) = p(i,j,k) + (velf-mean_val)*psif
+          f = f + (velf-mean_val)*psif*dx*dy*dz(k)
         enddo
       enddo
     enddo
@@ -196,28 +224,28 @@ module mod_forcing
     real(rp), intent(out  ) :: mean
     real(rp)              :: mean_val,mean_psi
     integer :: i,j,k,nx,ny,nz
-    real(rp) :: psis,dx,dy
+    real(rp) :: psif,dx,dy
     !
     nx = n(1)
     ny = n(2)
     nz = n(3)
     dx = dl(1)
     dy = dl(2)
-    mean_val = 0._rp
-    mean_psi = 0._rp
+    mean_val = 0.0_rp
+    mean_psi = 0.0_rp
     !
     !$acc data copy(mean_val,mean_psi) async(1)
-    !$acc parallel loop collapse(3) default(present) private(psis) reduction(+:mean_val) reduction(+:mean_psi) async(1)
+    !$acc parallel loop collapse(3) default(present) private(psif) reduction(+:mean_val) reduction(+:mean_psi) async(1)
     !$OMP PARALLEL DO DEFAULT(none) &
     !$OMP SHARED(n,psi,p,dl,dz) &
-    !$OMP PRIVATE(i,j,k,psis) &
+    !$OMP PRIVATE(i,j,k,psif) &
     !$OMP REDUCTION(+:mean_val,mean_psi)
     do k=1,nz
       do j=1,ny
         do i=1,nx
-          psis = 1._rp-psi(i,j,k)
-          mean_val = mean_val + p(i,j,k)*psis*dx*dy*dz(k)
-          mean_psi = mean_psi + psis*dx*dy*dz(k)
+          psif = 1.0_rp - psi(i,j,k)
+          mean_val = mean_val + p(i,j,k)*psif*dx*dy*dz(k)
+          mean_psi = mean_psi + psif*dx*dy*dz(k)
         enddo
       enddo
     enddo

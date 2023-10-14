@@ -33,8 +33,8 @@ module mod_updatep
         do i=1,n(1)
           p(i,j,k) = p(i,j,k) + pp(i,j,k) + alpha*( &
 #if !defined(_IMPDIFF_1D)
-                      (pp(i+1,j,k)-2.*pp(i,j,k)+pp(i-1,j,k))*(dxi**2) + &
-                      (pp(i,j+1,k)-2.*pp(i,j,k)+pp(i,j-1,k))*(dyi**2) + &
+                      (pp(i+1,j,k)-2.0_rp*pp(i,j,k)+pp(i-1,j,k))*(dxi**2) + &
+                      (pp(i,j+1,k)-2.0_rp*pp(i,j,k)+pp(i,j-1,k))*(dyi**2) + &
 #endif
                       ((pp(i,j,k+1)-pp(i,j,k  ))*dzci(k  ) - &
                        (pp(i,j,k  )-pp(i,j,k-1))*dzci(k-1))*dzfi(k) )

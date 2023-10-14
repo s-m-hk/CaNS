@@ -35,6 +35,7 @@ integer , protected :: itot,jtot,ktot
 real(rp), protected :: lx,ly,dx,dy,dz,dxi,dyi,dzi,gr
 real(rp) :: lz
 real(rp), protected :: cfl,dtmin
+character(len=3), protected    :: time_scheme
 real(rp), protected :: uref,lref,rey,visc
 !
 character(len=100), protected :: inivel
@@ -60,14 +61,11 @@ real(rp)        , protected, dimension(0:1,3)   ::  bcpre
 real(rp), protected, dimension(3) :: gacc 
 real(rp), protected, dimension(3) :: bforce
 logical , protected, dimension(4) :: is_forced
-#if defined(_HEAT_TRANSFER)
-real(rp), protected, dimension(4) :: velf
-#else
 real(rp), protected, dimension(3) :: velf
-#endif
 !
 integer , protected, dimension(3) :: ng
 real(rp), dimension(3) :: l
+integer , protected :: gtype
 real(rp), protected, dimension(3) :: dl
 real(rp), protected, dimension(3) :: dli
 !
@@ -78,8 +76,10 @@ real(rp)        , protected, dimension(0:1,3) ::  bctmp
 character(len=3), protected       :: itmp
 real(rp), protected               :: alph_f,alph_s,Pr,dr,tg0
 real(rp), protected               :: solidtemp
+real(rp), protected               :: ssource
+real(rp), protected               :: tmpf
 real(rp), protected               :: tmp0,beta_th
-logical, protected                :: is_cmpt_wallflux
+logical , protected               :: is_cmpt_wallflux
 #endif
 real(rp), protected               :: solid_height_ratio
 real(rp), protected               :: Rotation_angle
@@ -108,8 +108,9 @@ contains
       if( ierr == 0 ) then
         read(iunit,*,iostat=ierr) itot,jtot,ktot
         read(iunit,*,iostat=ierr) lx,ly,lz
-        read(iunit,*,iostat=ierr) gr
+        read(iunit,*,iostat=ierr) gtype,gr
         read(iunit,*,iostat=ierr) cfl,dtmin
+        read(iunit,*,iostat=ierr) time_scheme
         read(iunit,*,iostat=ierr) uref,lref,rey
         read(iunit,*,iostat=ierr) inivel
         read(iunit,*,iostat=ierr) is_wallturb
@@ -162,6 +163,7 @@ contains
     !  
     ! load heat transfer input files
     !
+    is_forced(4) = .false.
 #if defined(_HEAT_TRANSFER)
     open(newunit=iunit,file='heat.in',status='old',action='read',iostat=ierr)
     if( ierr.eq.0 ) then
@@ -173,8 +175,9 @@ contains
       read(iunit,*,iostat=ierr) bctmp(0,1  ),bctmp(1,1  ),bctmp(0,2  ),bctmp(1,2  ),bctmp(0,3  ),bctmp(1,3  )
       read(iunit,*,iostat=ierr) tmp0,beta_th
       read(iunit,*,iostat=ierr) solidtemp
+      read(iunit,*,iostat=ierr) ssource
       read(iunit,*,iostat=ierr) is_forced(4)
-      read(iunit,*,iostat=ierr) velf(4)
+      read(iunit,*,iostat=ierr) tmpf
       read(iunit,*,iostat=ierr) is_cmpt_wallflux
     else
       if(myid == 0) print*, 'Error reading heat input file' 

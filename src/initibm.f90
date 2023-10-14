@@ -43,10 +43,10 @@ nx = n(1)
 ny = n(2)
 nz = n(3)
 !
-cell_u_tag(:,:,:)    = 0.0_rp
-cell_v_tag(:,:,:)    = 0.0_rp
-cell_w_tag(:,:,:)    = 0.0_rp
-cell_phi_tag(:,:,:)  = 0.0_rp
+cell_u_tag(1:nx,1:ny,1:nz)    = 0.0_rp
+cell_v_tag(1:nx,1:ny,1:nz)    = 0.0_rp
+cell_w_tag(1:nx,1:ny,1:nz)    = 0.0_rp
+cell_phi_tag(1:nx,1:ny,1:nz)  = 0.0_rp
 !
 inquire(file=trim(datadir)//'IBM.bin',exist=is_data)
 
@@ -55,9 +55,9 @@ if (.not.is_data) then
    !$acc enter data copyin(cell_phi_tag)
    call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
    !
-   do k=0,nz
-    do j=0,ny
-     do i=0,nx
+   do k=1,nz
+    do j=1,ny
+     do i=1,nx
      if((cell_phi_tag(i,j,k) + cell_phi_tag(i+1,j,k)) > 0.5_rp) cell_u_tag(i,j,k) = 1.0_rp
      if((cell_phi_tag(i,j,k) + cell_phi_tag(i,j+1,k)) > 0.5_rp) cell_v_tag(i,j,k) = 1.0_rp
      if((cell_phi_tag(i,j,k) + cell_phi_tag(i,j,k+1)) > 0.5_rp) cell_w_tag(i,j,k) = 1.0_rp
@@ -65,7 +65,9 @@ if (.not.is_data) then
     enddo
    enddo
    !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag)
-   call bounduvw(cbcvel,n,nh,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
+   call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_u_tag)
+   call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_v_tag)
+   call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_w_tag)
    !
    dummy_time = 0.0_rp; dummy_istep = 0
    !$acc update self(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
@@ -87,9 +89,12 @@ end subroutine initIBM
 subroutine initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,nh,halo,ng,nb,lo,hi,cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag, &
                    Level_set, &
                    surf_height, &
-                   ldz,zc,zf,zf_g,dzc,dzf,dl,dli, &
-                   nx_surf,ny_surf,nz_surf,nabs_surf,i_mirror,j_mirror,k_mirror, &
-                   i_IP1,j_IP1,k_IP1,i_IP2,j_IP2,k_IP2,WP1,WP2,deltan)
+                   ldz,zc,zf,zf_g,dzc,dzf,dl,dli &
+#if defined(_IBM_BC)
+                   ,nx_surf,ny_surf,nz_surf,nabs_surf,i_mirror,j_mirror,k_mirror, &
+                   i_IP1,j_IP1,k_IP1,i_IP2,j_IP2,k_IP2,WP1,WP2,deltan &
+#endif
+                   )
 implicit none
 character(len=1), intent(in), dimension(0:1,3,3)          :: cbcvel
 real(rp), intent(in), dimension(0:1,3,3)                  :: bcvel
@@ -111,6 +116,7 @@ real(rp), intent(out),dimension(0:n(1)+1,0:n(2)+1,0:n(3)+1) :: cell_u_tag,cell_v
 integer,  intent(out),dimension(0:n(1)+1,0:n(2)+1,0:n(3)+1) :: Level_set
 #endif
 real(rp), dimension(:,:,:), allocatable :: tmp
+#if defined(_IBM_BC)
 integer,optional,intent(out),dimension(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6) :: i_mirror,j_mirror,k_mirror, &
                                                                           i_IP1,j_IP1,k_IP1, &
                                                                           i_IP2,j_IP2,k_IP2
@@ -120,6 +126,7 @@ real(rp), dimension(:,:,:), allocatable :: z_intersect(:,:,:),y_intersect(:,:,:)
 real(rp), dimension(:,:,:), allocatable :: x_mirror(:,:,:), y_mirror(:,:,:), z_mirror(:,:,:)
 real(rp), dimension(:,:,:), allocatable :: x_IP1(:,:,:), y_IP1(:,:,:), z_IP1(:,:,:) !can be deallocated later
 real(rp), dimension(:,:,:), allocatable :: x_IP2(:,:,:), y_IP2(:,:,:), z_IP2(:,:,:) !can be deallocated later
+#endif
 real(rp) :: dummy_time
 integer  :: dummy_istep
 integer  :: i,j,k,nx,ny,nz,h,idir
@@ -129,11 +136,11 @@ nx = n(1)
 ny = n(2)
 nz = n(3)
 !
-cell_u_tag(:,:,:)    = 0.0_rp
-cell_v_tag(:,:,:)    = 0.0_rp
-cell_w_tag(:,:,:)    = 0.0_rp
-cell_phi_tag(:,:,:)  = 0.0_rp
-Level_set(:,:,:)     = 0
+cell_u_tag(1:nx,1:ny,1:nz)    = 0.0_rp
+cell_v_tag(1:nx,1:ny,1:nz)    = 0.0_rp
+cell_w_tag(1:nx,1:ny,1:nz)    = 0.0_rp
+cell_phi_tag(1:nx,1:ny,1:nz)  = 0.0_rp
+Level_set(1:nx,1:ny,1:nz)     = 0
 !
 inquire(file=trim(datadir)//'IBM.bin',exist=is_data)
 
@@ -149,32 +156,34 @@ if (.not.is_data) then
            z_IP2(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6))
   allocate(tmp(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6))
 #else
-  allocate(tmp(-1:n(1)+1,-1:n(2)+1,-1:n(3)+1))
+  allocate(tmp(0:n(1)+1,0:n(2)+1,0:n(3)+1))
 #endif
 
-  !$acc enter data copyin(cell_phi_tag,Level_set)
+  !$acc enter data copyin(cell_phi_tag,cell_u_tag,cell_v_tag,cell_w_tag,Level_set)
   call IBM_mask(n,ng,lo,hi,zc,zf,zf_g,dzc,dzf,is_bound,cell_phi_tag,Level_set,surf_height)
 
       !$acc enter data copyin(tmp)
-       tmp(:,:,:) = real(Level_set(:,:,:),rp)
+       tmp(1:nx,1:ny,1:nz) = 1._rp*Level_set(1:nx,1:ny,1:nz)
        call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,tmp)
-       Level_set(:,:,:) = int(tmp(:,:,:),i8)
-      !$acc exit data copyout(tmp) async ! not needed on the device
+       Level_set(0:nx+1,0:ny+1,0:nz+1) = int(tmp(0:nx+1,0:ny+1,0:nz+1))
+      !$acc exit data copyout(tmp) ! not needed on the device
    if (myid == 0)  print*, '*** Solid marker set! ***'
   !---------------------------------------------------------------------
        call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
-       !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag)
-       !$acc parallel loop gang collapse(3) default(present) async(1)
-       do k=0,nz
-        do j=0,ny
-         do i=0,nx
+       !$acc kernels default(present) async(1)
+       do k=1,nz
+        do j=1,ny
+         do i=1,nx
           cell_u_tag(i,j,k) = 0.5_rp*(cell_phi_tag(i+1,j,k)+cell_phi_tag(i,j,k))
           cell_v_tag(i,j,k) = 0.5_rp*(cell_phi_tag(i,j+1,k)+cell_phi_tag(i,j,k))
           cell_w_tag(i,j,k) = 0.5_rp*(cell_phi_tag(i,j,k+1)+cell_phi_tag(i,j,k))
          enddo
         enddo
        enddo
-       call bounduvw(cbcvel,n,nh,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
+       !$acc end kernels
+       call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_u_tag)
+       call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_v_tag)
+       call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzf,cell_w_tag)
    if (myid == 0)  print*, '*** Volume fractions calculated! ***'
   !---------------------------------------------------------------------
 
@@ -361,13 +370,16 @@ else
    !$acc enter data copyin(cell_u_tag,cell_v_tag,cell_w_tag,cell_phi_tag)
    ! tmp(:,:,:) = real(Level_set(:,:,:),rp)
    call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_phi_tag)
-   call bounduvw(cbcvel,n,nh,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,cell_u_tag,cell_v_tag,cell_w_tag)
+   call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_u_tag)
+   call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_v_tag)
+   call boundp(cbcpre,n,nh,halo,bcpre,nb,is_bound,dl,dzc,cell_w_tag)
    ! call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,tmp)
    ! Level_set(:,:,:) = int(tmp(:,:,:),i8)
 #endif
      if (myid == 0)  print*, '*** Saved IBM data loaded ***'
   !---------------------------------------------------------------------
 endif
+return
 end subroutine initIBM
 #endif
 #endif

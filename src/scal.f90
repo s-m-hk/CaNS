@@ -9,22 +9,25 @@ module mod_scal
   use mod_types
   implicit none
   private
-  public scal,cmpt_scalflux
+  public scal,cmpt_scalflux,scal_forcing
   contains
 #if !defined(_WENO)
-  subroutine scal(nx,ny,nz,dxi,dyi,dzi,dzci,dzfi,alph_f, &
+  subroutine scal(nx,ny,nz,dxi,dyi,dzi,dzci,dzfi,alph_f,alph_s, &
 #if defined(_IBM)
                   alph,psi, &
 #endif
                   u,v,w,s, &
 #if defined(_IMPDIFF)
                   dsdtd, &
+#if defined(_CONSTANT_COEFFS_DIFF)
+                  dsdtdc, &
+#endif
 #endif
                   dsdt)
     !
     implicit none
     integer , intent(in) :: nx,ny,nz
-    real(rp), intent(in) :: dxi,dyi,dzi,alph_f
+    real(rp), intent(in) :: dxi,dyi,dzi,alph_f,alph_s
     real(rp), intent(in), dimension(0:) :: dzci,dzfi
 #if defined(_IBM)
     real(rp), intent(in), dimension(0:,0:,0:) :: alph
@@ -33,12 +36,17 @@ module mod_scal
     real(rp), dimension(0:,0:,0:), intent(in) :: u,v,w,s
 #if defined(_IMPDIFF)
     real(rp), dimension(:,:,:), intent(out) :: dsdtd
+#if defined(_CONSTANT_COEFFS_DIFF)
+    real(rp), dimension(:,:,:), intent(out) :: dsdtdc
+#endif
 #endif
     real(rp), dimension(:,:,:), intent(out) :: dsdt
     integer :: i,j,k
     real(rp) :: usip,usim,vsjp,vsjm,wskp,wskm
     real(rp) :: dsdxp,dsdxm,dsdyp,dsdym,dsdzp,dsdzm
-    real(rp) :: source  
+    real(rp) :: source,maxalph 
+    !
+    maxalph = max(alph_f,alph_s)
     !
     !$acc parallel loop collapse(3) default(present) private(usip,usim,vsjp,vsjm,wskp,wskm,dsdxp,dsdxm,dsdyp,dsdym,dsdzp,dsdzm) async(1)
     !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)  PRIVATE(usip,usim,vsjp,vsjm,wskp,wskm,dsdxp,dsdxm,dsdyp,dsdym,dsdzp,dsdzm)
@@ -68,6 +76,18 @@ module mod_scal
           dsdtd(i,j,k) = (dsdxp-dsdxm)*dxi + &
                          (dsdyp-dsdym)*dyi + &
                          (dsdzp-dsdzm)*dzfi(k)
+#if defined(_CONSTANT_COEFFS_DIFF)           
+          dsdxp = maxalph*(s(i+1,j,k)-s(i  ,j,k))*dxi
+          dsdxm = maxalph*(s(i  ,j,k)-s(i-1,j,k))*dxi
+          dsdyp = maxalph*(s(i,j+1,k)-s(i,j  ,k))*dyi
+          dsdym = maxalph*(s(i,j  ,k)-s(i,j-1,k))*dyi
+          dsdzp = maxalph*(s(i,j,k+1)-s(i,j,k  ))*dzci(k  )
+          dsdzm = maxalph*(s(i,j,k  )-s(i,j,k-1))*dzci(k-1)
+          !
+          dsdtdc(i,j,k) = (dsdxp-dsdxm)*dxi + &
+                          (dsdyp-dsdym)*dyi + &
+                          (dsdzp-dsdzm)*dzfi(k)
+#endif
           !
           dsdt(i,j,k) = dxi*(     -usip + usim ) + &
                         dyi*(     -vsjp + vsjm ) + &
@@ -331,5 +351,17 @@ module mod_scal
   flux(:) = [flux_x,flux_y,flux_z]
   call MPI_ALLREDUCE(MPI_IN_PLACE,flux(3),3,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
  end subroutine cmpt_scalflux
+!
+  subroutine scal_forcing(n,is_forced,f,s)
+    integer , intent(in   ), dimension(3) :: n
+    logical , intent(in   ) :: is_forced
+    real(rp), intent(in   ) :: f
+    real(rp), intent(inout), dimension(0:,0:,0:) :: s
+    if(is_forced) then
+      !$acc kernels default(present) async(1)
+      s(1:n(1),1:n(2),1:n(3)) = s(1:n(1),1:n(2),1:n(3)) + f
+      !$acc end kernels
+    end if
+  end subroutine scal_forcing
 !
 end module mod_scal

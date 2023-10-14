@@ -27,14 +27,11 @@ module mod_fillps
     real(rp), intent(in ) :: dti
     real(rp), intent(in ), dimension(0:,0:,0:) :: u,v,w
     real(rp), intent(out), dimension(0:,0:,0:) :: p
-    real(rp) :: dtidxi,dtidyi!,dtidzi
-    !real(rp), dimension(0:n(3)+1) :: dtidzfi
+    real(rp) :: dtidxi,dtidyi
     integer :: i,j,k
     !
     dtidxi = dti*dli(1)
     dtidyi = dti*dli(2)
-    !dtidzi = dti*dli(3)
-    !dtidzfi(:) = dti*dzfi(:)
     !$acc parallel loop collapse(3) default(present) async(1)
     !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)
     do k=1,n(3)

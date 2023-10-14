@@ -29,7 +29,11 @@ module mod_sanity
   private
   public test_sanity_input,test_sanity_solver
   contains
-  subroutine test_sanity_input(ng,dims,stop_type,cbcvel,cbcpre,bcvel,bcpre,is_forced)
+  subroutine test_sanity_input(ng,dims,stop_type,cbcvel,cbcpre,bcvel,bcpre,is_forced &
+#if defined(_HEAT_TRANSFER)
+                               ,alph_f,alph_s &
+#endif
+                               )
     !
     ! performs some a priori checks of the input files before the calculation starts
     !
@@ -42,6 +46,9 @@ module mod_sanity
     real(rp)        , intent(in), dimension(0:1,3,3) :: bcvel
     real(rp)        , intent(in), dimension(0:1,3)   :: bcpre
     logical         , intent(in), dimension(3)       :: is_forced
+#if defined(_HEAT_TRANSFER)
+    real(rp)        , intent(in)                     :: alph_f,alph_s
+#endif
     logical :: passed
     !
     call chk_dims(ng,dims,passed);                 if(.not.passed) call abortit
@@ -57,12 +64,19 @@ module mod_sanity
 #endif
 #if defined(_SINGLE_PRECISION_POISSON) && defined(_IMPDIFF) && !(defined(_IMPDIFF_1D) || defined(_DECOMP_Z))
     ! note: the code won't even compile as is now
-    if(myid == 0)  print*, 'ERROR: a run with `_SINGLE_PRECISION_POISSON` can only accomodate implicit diffusion along Z, &
+    if(myid == 0)  print*, 'ERROR: a run with `_SINGLE_PRECISION_POISSON` can only accommodate implicit diffusion along Z, &
                                  & and requires building with building with `_IMPDIFF_1D` and `_DECOMP_Z`.'; call abortit
 #elif defined(_SINGLE_PRECISION_POISSON) && defined(_IMPDIFF) && defined(_IMPDIFF_1D) && defined(_OPENACC)
     if(cbcpre(0,3)//cbcpre(1,3) == 'PP') then
       if(myid == 0)  print*, 'ERROR: GPU runs with `_SINGLE_PRECISION_POISSON` and `_IMPDIFF_1D` &
                                    & do not support periodic boundary conditions along Z.'; call abortit
+    end if
+#endif
+#if defined(_HEAT_TRANSFER)
+    if(alph_f /= alph_s) then
+#if defined(_IMPDIFF_1D) && defined(_IBM) && defined(_SIMPLE) && !defined(_CONSTANT_COEFFS_DIFF)
+     if(myid == 0)  print*, 'ERROR: `Implicit diffusion with variable thermal diffusivity requires building with `_CONSTANT_COEFFS_DIFF`.'; call abortit
+#endif
     end if
 #endif
   end subroutine test_sanity_input

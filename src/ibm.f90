@@ -8,8 +8,6 @@ use mod_param, only: lx,ly,lz,dx,dy,dxi,dyi,dims, &
                      small, nb
 use mod_common_mpi, only: myid, ipencil => ipencil_axis
 use mod_types
-!@acc use openacc
-!@acc use cudecomp
 implicit none
 private
 #if !defined(_IBM_BC)
@@ -94,7 +92,7 @@ real(rp):: length_z,xxx,yyy,zzz,dxx,dyy,dzz,dxl,dyl
 real(rp):: cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z
 real(rp):: counter,ratio
 logical :: inside,ghost
-integer :: nx,ny,nz,kk,s1,s2
+integer :: nx,ny,nz,kk,lo1,lo2,lo3,s1,s2
 !
 s1 = 0; s2 = 0
 select case(surface_type)
@@ -113,13 +111,15 @@ length_z = lz
 nx = n(1)
 ny = n(2)
 nz = n(3)
+lo1 = lo(1)
+lo2 = lo(2)
+lo3 = lo(3)
 !
 #if !defined(_DECOMP_Z)
 ratio = 1.0_rp
 #else
 ratio = solid_height_ratio
 #endif
-!$acc enter data create(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
 ! Wall Geometry
 #if !defined(_GPU)
 number_of_divisions = 50
@@ -128,116 +128,110 @@ number_of_divisions = 100
 #endif
 if (myid == 0) print*, '*** Calculating volume fractions ***'
 if( (trim(surface_type) == 'HeightMap') .or. (trim(surface_type) == 'WavyWall') ) then
-!!
 #if !defined(_DECOMP_Z)
-if( (.not.is_bound(1,3)).and.(lo(3).lt.int(ng(3)/2)) ) then
+ if( (.not.is_bound(1,3)).and.(lo(3).lt.int(ng(3)/2)) ) then
 #endif
-!$acc parallel loop gang collapse(3) default(present) private(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
-do k=1,int(ratio*nz) ! Lower wall
-  do j=1,ny
-    do i=1,nx
-      xxx = (i+lo(1)-1-0.5)*dxl
-      yyy = (j+lo(2)-1-0.5)*dyl
-      zzz = zc(k)
-	  if(s1 == 1) ghost = height_map_ghost(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
-	  if(s2 == 1) ghost = wavywall_ghost(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
-      if (ghost) then
-          cell_phi_tag(i,j,k) = 1.0_rp
-          Level_set(i,j,k)    = 1
-      endif
-
-! Cell Center
-      inside = .false.
-      cell_start_x = (i+lo(1)-1-1.0)*dxl
-      cell_end_x   = (i+lo(1)-1-0.0)*dxl
-
-      cell_start_y = (j+lo(2)-1-1.0)*dyl
-      cell_end_y   = (j+lo(2)-1-0.0)*dyl
-
-      cell_start_z = zf(k-1)
-      cell_end_z   = zf(k)
-
-      dxx = (cell_end_x-cell_start_x)/number_of_divisions
-      dyy = (cell_end_y-cell_start_y)/number_of_divisions
-      dzz = (cell_end_z-cell_start_z)/number_of_divisions
-
-      counter = 0
-      !$acc loop seq
-      do nn= 1,number_of_divisions
-         zzz = cell_start_z + (nn-1)*dzz
-        !$acc loop seq
-        do m = 1,number_of_divisions
-           yyy = cell_start_y + (m-1 )*dyy
-            !$acc loop seq
-            do l = 1,number_of_divisions
-               xxx = cell_start_x + (l-1 )*dxx
-	           if(s1 == 1) inside = height_map(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
-	           if(s2 == 1) inside = wavywall(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
-               if (inside) counter = counter + 1
-            enddo
-        enddo
-      enddo
-     cell_phi_tag(i,j,k) = counter/(1.0_rp*number_of_divisions**3) !Solid volume fraction
-
-    enddo
-  enddo
-enddo
+  if(surface_type=='HeightMap') then
+   !$acc parallel loop gang collapse(3) default(present) async(1)
+   do k=1,int(ratio*nz) ! Lower wall
+     do j=1,ny
+       do i=1,nx
+         xxx = (i+lo1-1-0.5)*dxl
+         yyy = (j+lo2-1-0.5)*dyl
+         zzz = zc(k)
+         if (zzz.lt.surf_height(i,j)) ghost = .true.
+         if (ghost) then
+             cell_phi_tag(i,j,k) = 1.0_rp
+             Level_set(i,j,k)    = 1
+         endif
+   
+         inside = .false.
+         cell_start_x = (i+lo1-1-1.0)*dxl
+         cell_end_x   = (i+lo1-1-0.0)*dxl
+   
+         cell_start_y = (j+lo2-1-1.0)*dyl
+         cell_end_y   = (j+lo2-1-0.0)*dyl
+   
+         cell_start_z = zf(k-1)
+         cell_end_z   = zf(k)
+   
+         dxx = (cell_end_x-cell_start_x)/number_of_divisions
+         dyy = (cell_end_y-cell_start_y)/number_of_divisions
+         dzz = (cell_end_z-cell_start_z)/number_of_divisions
+   
+         counter = 0
+         do nn= 1,number_of_divisions
+            zzz = cell_start_z + (nn-1)*dzz
+           do m = 1,number_of_divisions
+              yyy = cell_start_y + (m-1 )*dyy
+               do l = 1,number_of_divisions
+                  xxx = cell_start_x + (l-1 )*dxx
+                  if (zzz.le.surf_height(i,j)) inside = .true.
+                  if (inside) counter = counter + 1
+               enddo
+           enddo
+         enddo
+        cell_phi_tag(i,j,k) = counter/(1._rp*number_of_divisions**3) !Solid volume fraction
+   
+       enddo
+     enddo
+   enddo
+  endif
 #if !defined(_DECOMP_Z)
-endif
+ endif
 #endif
 #if !defined(_DECOMP_Z) && defined(_SYMMETRIC)
-if( (.not.is_bound(0,3)).and.(lo(3).gt.int(ng(3)/2)) ) then
-!$acc parallel loop gang collapse(3) default(present) private(xxx,yyy,zzz,dxx,dyy,dzz,cell_start_x,cell_end_x,cell_start_y,cell_end_y,cell_start_z,cell_end_z,ghost,inside) async(1)
-do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
-  do j=1,ny
-    do i=1,nx
-      xxx = (i+lo(1)-1-0.5)*dxl
-      yyy = (j+lo(2)-1-0.5)*dyl
-      zzz = length_z - zc(k)
-	  if(s1 == 1) ghost = height_map_ghost(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
-	  if(s2 == 1) ghost = wavywall_ghost(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
-      if (ghost) then
-        cell_phi_tag(i,j,k) = 1.0_rp
-        Level_set(i,j,k)    = 1
-      endif
-
-! Cell Center
-      inside = .false.
-      cell_start_x = (i+lo(1)-1-1.0)*dxl
-      cell_end_x   = (i+lo(1)-1-0.0)*dxl
-
-      cell_start_y = (j+lo(2)-1-1.0)*dyl
-      cell_end_y   = (j+lo(2)-1-0.0)*dyl
-
-      cell_start_z = length_z - zf(k-1)
-      cell_end_z   = length_z - zf(k)
-
-      dxx = (cell_end_x-cell_start_x)/number_of_divisions
-      dyy = (cell_end_y-cell_start_y)/number_of_divisions
-      dzz = (cell_end_z-cell_start_z)/number_of_divisions
-
-      counter = 0
-      !$acc loop seq
-      do nn= 1,number_of_divisions
-         zzz = cell_start_z + (nn-1)*dzz
-        !$acc loop seq
-        do m = 1,number_of_divisions
-           yyy = cell_start_y + (m-1 )*dyy
-            !$acc loop seq
-            do l = 1,number_of_divisions
-               xxx = cell_start_x + (l-1 )*dxx
-	           if(s1 == 1) inside = height_map(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
-	           if(s2 == 1) inside = wavywall(xxx,yyy,zzz,i,j,dxl,dyl,dzc(k),n,surf_height,lo,hi)
-               if (inside) counter = counter + 1
-            enddo
-        enddo
-      enddo
-     cell_phi_tag(i,j,k) = counter/(1.0_rp*number_of_divisions**3) !Solid volume fraction
-
-    enddo
-  enddo
-enddo
-endif
+ if( (.not.is_bound(0,3)).and.(lo(3).gt.int(ng(3)/2)) ) then
+  if(surface_type=='HeightMap') then
+   !$acc parallel loop gang collapse(3) default(present) async(1)
+   do k=nz,(nz-int(ratio*nz)),-1 ! Upper wall
+     do j=1,ny
+       do i=1,nx
+         xxx = (i+lo1-1-0.5)*dxl
+         yyy = (j+lo2-1-0.5)*dyl
+         zzz = length_z - zc(k)
+         if (zzz.lt.surf_height(i,j)) ghost = .true.
+         if (ghost) then
+           cell_phi_tag(i,j,k) = 1.0_rp
+           Level_set(i,j,k)    = 1
+         endif
+   
+         inside = .false.
+         cell_start_x = (i+lo1-1-1.0)*dxl
+         cell_end_x   = (i+lo1-1-0.0)*dxl
+   
+         cell_start_y = (j+lo2-1-1.0)*dyl
+         cell_end_y   = (j+lo2-1-0.0)*dyl
+   
+         cell_start_z = length_z - zf(k-1)
+         cell_end_z   = length_z - zf(k)
+   
+         dxx = (cell_end_x-cell_start_x)/number_of_divisions
+         dyy = (cell_end_y-cell_start_y)/number_of_divisions
+         dzz = (cell_end_z-cell_start_z)/number_of_divisions
+   
+         counter = 0
+         !$acc loop seq
+         do nn= 1,number_of_divisions
+            zzz = cell_start_z + (nn-1)*dzz
+           !$acc loop seq
+           do m = 1,number_of_divisions
+              yyy = cell_start_y + (m-1 )*dyy
+               !$acc loop seq
+               do l = 1,number_of_divisions
+                  xxx = cell_start_x + (l-1 )*dxx
+                  if (zzz.le.surf_height(i,j)) inside = .true.
+                  if (inside) counter = counter + 1
+               enddo
+           enddo
+         enddo
+        cell_phi_tag(i,j,k) = counter/(1._rp*number_of_divisions**3) !Solid volume fraction
+   
+       enddo
+     enddo
+   enddo
+  endif
+ endif
 #endif
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 else ! Solids generated using functions [not GPU driven for now]
@@ -370,11 +364,12 @@ endif
 ! Duplicate volume fractions on the upper part of the domain (symmetric channel)
 #if defined(_DECOMP_Z) && defined(_SYMMETRIC)
 kk = 1
-!$acc parallel loop gang default(present) async(1)
-do k = nz,(nz-int(ratio*nz)),-1
-     cell_phi_tag(:,:,k) = cell_phi_tag(:,:,kk)
-	 kk = kk + 1   
+!$acc kernels default(present) async(1)
+do k = nz,nz-int(ratio*nz),-1
+    cell_phi_tag(1:nx,1:ny,k) = cell_phi_tag(1:nx,1:ny,kk)
+	kk = kk + 1
 enddo
+!$acc end kernels
 #endif
 
 end subroutine IBM_Mask

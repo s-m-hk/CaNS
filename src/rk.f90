@@ -8,7 +8,8 @@
 module mod_rk
   use mod_mom    ,  only: momx_a,momy_a,momz_a, &
                           momx_d,momy_d,momz_d, &
-                          momx_p,momy_p,momz_p, cmpt_wallshear
+                          momx_p,momy_p,momz_p, &
+                          cmpt_wallshear,bulk_forcing
 #if defined(_IMPDIFF_1D)
   use mod_mom    ,  only: momx_d_xy,momy_d_xy,momz_d_xy, &
                           momx_d_z ,momy_d_z ,momz_d_z
@@ -16,11 +17,10 @@ module mod_rk
 #if defined(_FAST_MOM_KERNELS)
   use mod_mom    ,  only: mom_xyz_ad
 #endif
-  use mod_scal   ,  only: scal,cmpt_scalflux
+  use mod_scal   ,  only: scal,cmpt_scalflux,scal_forcing
   use mod_source ,  only: grav_src
 #if defined(_IBM)
-  use mod_forcing,  only: force_vel,  &
-                          bulk_mean_ibm, &
+  use mod_forcing,  only: ib_force,force_vel,bulk_mean_ibm, &
 #if defined(_HEAT_TRANSFER)
                           force_scal, &
 #endif
@@ -38,11 +38,12 @@ module mod_rk
   private
   public rk,rk_scal
   contains
-  subroutine rk(rkpar,n,nh_v,nh_s,dli,l,zc,zf,dzci,dzfi,grid_vol_ratio_c,grid_vol_ratio_f,visc,dt,p, &
+  subroutine rk(time_scheme,rkpar,n,nh_v,nh_s,dli,l,zc,zf,dzci,dzfi,grid_vol_ratio_c,grid_vol_ratio_f,visc,dt,dto,p, &
                 is_bound,is_forced,velf,bforce,tauxo,tauyo,tauzo,u,v,w, &
                 dl,dzc,dzf, &
 #if defined(_IBM)
                 psi_s,psi_u,psi_v,psi_w, &
+                fx,fy,fz, &
                 fibm, &
 #endif
 #if defined(_HEAT_TRANSFER)
@@ -57,25 +58,21 @@ module mod_rk
     ! for time integration of the momentum equations.
     !
     implicit none
-    logical , parameter :: is_cmpt_wallshear = .false.
-    real(rp), intent(in   ), dimension(2) :: rkpar
-    integer , intent(in   ), dimension(3) :: n
-    integer , intent(in   )               :: nh_v,nh_s
-    real(rp), intent(in   )               :: visc,dt
-    real(rp), intent(in   ), dimension(3) :: dli,l
-    real(rp), intent(in   ), dimension(3)  :: dl
-    real(rp), intent(in   ), dimension(0:) :: dzc,dzf
-    real(rp), intent(in   ), dimension(0:) :: zc,zf,dzci,dzfi
-    real(rp), intent(in   ), dimension(0:) :: grid_vol_ratio_c,grid_vol_ratio_f
+    character(len=3), intent(in   )              :: time_scheme
+    real(rp), intent(in   ), dimension(2)        :: rkpar
+    integer , intent(in   ), dimension(3)        :: n
+    integer , intent(in   )                      :: nh_v,nh_s
+    real(rp), intent(in   )                      :: visc,dt,dto
+    real(rp), intent(in   ), dimension(3)        :: dli,l
+    real(rp), intent(in   ), dimension(3)        :: dl
+    real(rp), intent(in   ), dimension(0:)       :: dzc,dzf
+    real(rp), intent(in   ), dimension(0:)       :: zc,zf,dzci,dzfi
+    real(rp), intent(in   ), dimension(0:)       :: grid_vol_ratio_c,grid_vol_ratio_f
     real(rp), intent(in   ), dimension(0:,0:,0:) :: p
     logical , intent(in   ), dimension(0:1,3)    :: is_bound
-#if defined(_HEAT_TRANSFER)
     logical , intent(in   ), dimension(4)        :: is_forced
-#else
-    logical , intent(in   ), dimension(3)        :: is_forced
-#endif
     real(rp), intent(in   ), dimension(3)        :: velf,bforce
-    real(rp), intent(inout), dimension(3) :: tauxo,tauyo,tauzo
+    real(rp), intent(inout), dimension(3)        :: tauxo,tauyo,tauzo
     real(rp), intent(inout), dimension(0:,0:,0:) :: u,v,w
     real(rp), intent(inout), dimension(4) :: f
     real(rp), target     , allocatable, dimension(:,:,:), save :: dudtrk_t ,dvdtrk_t ,dwdtrk_t , &
@@ -85,6 +82,7 @@ module mod_rk
     real(rp),              allocatable, dimension(:,:,:), save :: dudtrkd  ,dvdtrkd  ,dwdtrkd
 #if defined(_IBM)
     real(rp), intent(in   ), dimension(0:,0:,0:) :: psi_s,psi_u,psi_v,psi_w
+    real(rp), intent(inout), dimension(0:,0:,0:) :: fx,fy,fz
     real(rp), intent(out), dimension(4) :: fibm
 #endif
 #if defined(_HEAT_TRANSFER)
@@ -99,8 +97,18 @@ module mod_rk
     integer :: i,j,k
     real(rp) :: mean
     !
-    factor1 = rkpar(1)*dt
-    factor2 = rkpar(2)*dt
+    if(    time_scheme.eq.'ab2') then !1st order Euler used for first time-step
+     if(is_first) then
+      factor1 = 1.0_rp*dt
+      factor2 = 0.0_rp*dt
+     else
+      factor1 = (1.0_rp+0.5_rp*(dt/dto) )*dt
+      factor2 = (      -0.5_rp*(dt/dto) )*dt
+     endif
+    elseif(time_scheme.eq.'rk3') then
+      factor1 = rkpar(1)*dt
+      factor2 = rkpar(2)*dt
+    endif
     factor12 = factor1 + factor2
     !
     ! initialization
@@ -293,11 +301,10 @@ module mod_rk
                            psi_u,psi_v,psi_w,&
 #endif
                            u,v,w,f)
+    call bulk_forcing(n,is_forced,f,u,v,w)
 #if defined(_IBM)
-    !
-    ! IBM forcing
-    !
-  call force_vel(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fibm)
+    call ib_force(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fx,fy,fz,fibm)
+    ! call force_vel(n,u,v,w,fx,fy,fz)
 #endif
 #if defined(_IMPDIFF)
     !
@@ -316,8 +323,8 @@ module mod_rk
     end do
 #endif
   end subroutine rk
-  subroutine rk_scal(rkpar,n,nh_v,nh_s,dli,zc,zf,dzci,dzfi,grid_vol_ratio_f,dt,l,u,v,w,alph_f, &
-                     is_bound,is_forced,is_cmpt_wallflux,velf, &
+  subroutine rk_scal(time_scheme,rkpar,n,nh_v,nh_s,dli,zc,zf,dzci,dzfi,grid_vol_ratio_f,dt,dto,l,u,v,w,alph_f, &
+                     is_bound,is_forced,is_cmpt_wallflux,tmpf,ssource, &
                      dl,dzc,dzf, &
 #if defined(_IBM)
                      alph_s,al, &
@@ -332,49 +339,59 @@ module mod_rk
     ! for time integration of the scalar field.
     !
     implicit none
-    real(rp), intent(in   ), dimension(2)  :: rkpar
-    integer , intent(in   ), dimension(3)  :: n
-    integer , intent(in   )                :: nh_v,nh_s
-    real(rp), intent(in   ), dimension(3)  :: dli,l
-    real(rp), intent(in   ), dimension(0:) :: zc,zf,dzci,dzfi
-    real(rp), intent(in   ), dimension(0:) :: grid_vol_ratio_f
-    logical , intent(in   ), dimension(0:1,3)    :: is_bound
-#if defined(_HEAT_TRANSFER)
-    logical , intent(in   ), dimension(4)        :: is_forced
-#else
-    logical , intent(in   ), dimension(3)        :: is_forced
-#endif
-    logical , intent(in   )                      :: is_cmpt_wallflux
-    real(rp), intent(in   ), dimension(3)  :: velf
-    real(rp), intent(in   ), dimension(3)  :: dl
-    real(rp), intent(in   ), dimension(0:) :: dzc,dzf
-    real(rp), intent(in   ) :: alph_f,dt
-    real(rp), intent(in   ), dimension(0:,0:,0:) :: u,v,w
+    character(len=3) , intent(in   )                            :: time_scheme
+    real(rp), intent(in   ), dimension(2)                       :: rkpar
+    integer , intent(in   ), dimension(3)                       :: n
+    integer , intent(in   )                                     :: nh_v,nh_s
+    real(rp), intent(in   ), dimension(3)                       :: dli,l
+    real(rp), intent(in   ), dimension(0:)                      :: zc,zf,dzci,dzfi
+    real(rp), intent(in   ), dimension(0:)                      :: grid_vol_ratio_f
+    logical , intent(in   ), dimension(0:1,3)                   :: is_bound
+    logical , intent(in   ), dimension(4)                       :: is_forced
+    logical , intent(in   )                                     :: is_cmpt_wallflux
+    real(rp), intent(in   )                                     :: tmpf,ssource
+    real(rp), intent(in   ), dimension(3)                       :: dl
+    real(rp), intent(in   ), dimension(0:)                      :: dzc,dzf
+    real(rp), intent(in   )                                     :: alph_f,dt,dto
+    real(rp), intent(in   ), dimension(0:,0:,0:)                :: u,v,w
     real(rp), intent(inout), dimension(1-nh_s:,1-nh_s:,1-nh_s:) :: s
-    real(rp), intent(inout), dimension(4) :: f
-    real(rp), intent(inout), dimension(3) :: fluxo
-    real(rp), intent(out)                 :: wall_flux
-    real(rp), target     , allocatable, dimension(:,:,:), save :: dsdtrk_t, dsdtrko_t
-    real(rp), pointer    , contiguous , dimension(:,:,:), save :: dsdtrk, dsdtrko
+    real(rp), intent(inout), dimension(4)                       :: f
+    real(rp), intent(inout), dimension(3)                       :: fluxo
+    real(rp), intent(out)                                       :: wall_flux
+    real(rp), target     , allocatable, dimension(:,:,:), save  :: dsdtrk_t, dsdtrko_t
+    real(rp), pointer    , contiguous , dimension(:,:,:), save  :: dsdtrk, dsdtrko
 #if defined(_IMPDIFF)
-    real(rp),              allocatable, dimension(:,:,:), save :: dsdtrkd
+    real(rp),              allocatable, dimension(:,:,:), save  :: dsdtrkd
+#if defined(_CONSTANT_COEFFS_DIFF)
+    real(rp),              allocatable, dimension(:,:,:), save  :: dsdtrkdc
 #endif
-    real(rp) :: factor1,factor2,factor12
+#endif
+    real(rp)                                                    :: factor1,factor2,factor12
 #if defined(_IBM)
-    real(rp), intent(in   ) :: alph_s
-    real(rp), intent(in   ), dimension(0:,0:,0:) :: al
-    real(rp), intent(in   ), dimension(0:,0:,0:) :: psi_s,psi_u
+    real(rp), intent(in   )                                     :: alph_s
+    real(rp), intent(in   ), dimension(0:,0:,0:)                :: al
+    real(rp), intent(in   ), dimension(0:,0:,0:)                :: psi_s,psi_u
 #if defined(_VOLUME) && defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
-    real(rp), intent(out  ), dimension(4) :: fibm
+    real(rp), intent(out  ), dimension(4)                       :: fibm
 #endif
 #endif
-    real(rp), dimension(3) :: flux
-    real(rp) :: mean
-    integer :: i,j,k
-    logical, save :: is_first = .true.
+    real(rp), dimension(3)                                      :: flux
+    real(rp)                                                    :: mean
+    integer                                                     :: i,j,k
+    logical, save                                               :: is_first = .true.
     !
-    factor1 = rkpar(1)*dt
-    factor2 = rkpar(2)*dt
+    if(    time_scheme.eq.'ab2') then
+     if(is_first) then !1st order Euler used for first time-step
+      factor1 = 1.0_rp*dt
+      factor2 = 0.0_rp*dt
+     else
+      factor1 = (1.0_rp+0.5_rp*(dt/dto) )*dt
+      factor2 = (      -0.5_rp*(dt/dto) )*dt
+     endif
+    elseif(time_scheme.eq.'rk3') then
+      factor1 = rkpar(1)*dt
+      factor2 = rkpar(2)*dt
+    endif
     factor12 = factor1 + factor2
     !
     ! initialization
@@ -391,20 +408,39 @@ module mod_rk
 #if defined(_IMPDIFF)
       allocate(dsdtrkd(n(1),n(2),n(3)))
       !$acc enter data create(dsdtrkd) async(1)
+      !$acc kernels default(present) async(1)
+      !$OMP PARALLEL WORKSHARE
+      dsdtrkd(:,:,:) = 0.0_rp
+      !$OMP END PARALLEL WORKSHARE
+      !$acc end kernels
+#if defined(_CONSTANT_COEFFS_DIFF)
+      allocate(dsdtrkdc(n(1),n(2),n(3)))
+      !$acc enter data create(dsdtrkdc) async(1)
+      !$acc kernels default(present) async(1)
+      !$OMP PARALLEL WORKSHARE
+      dsdtrkdc(:,:,:) = 0.0_rp
+      !$OMP END PARALLEL WORKSHARE
+      !$acc end kernels
+#endif
 #endif
     end if
+    !
     if(is_cmpt_wallflux) then
       call cmpt_scalflux(n,is_bound,l,dli,dzci,dzfi,alph_f,s,flux)
       wall_flux = (factor1*sum(flux(:)/l(:)) + factor2*sum(fluxo(:)/l(:)))
       fluxo(:) = flux(:)
     end if
-    call scal(n(1),n(2),n(3),dli(1),dli(2),dli(3),dzci,dzfi,alph_f, &
+    !
+    call scal(n(1),n(2),n(3),dli(1),dli(2),dli(3),dzci,dzfi,alph_f,alph_s, &
 #if defined(_IBM)
               al,psi_s, &
 #endif
               u,v,w,s, &
 #if defined(_IMPDIFF)
               dsdtrkd, &
+#if defined(_CONSTANT_COEFFS_DIFF)
+              dsdtrkdc, &
+#endif
 #endif
               dsdtrk)
     !$acc parallel loop collapse(3) default(present) async(1)
@@ -412,7 +448,7 @@ module mod_rk
     do k=1,n(3)
       do j=1,n(2)
         do i=1,n(1)
-          s(i,j,k) = s(i,j,k) + factor1*dsdtrk(i,j,k) + factor2*dsdtrko(i,j,k)! + factor12*ssource
+          s(i,j,k) = s(i,j,k) + factor1*dsdtrk(i,j,k) + factor2*dsdtrko(i,j,k) + factor12*ssource
 #if defined(_IMPDIFF)
           s(i,j,k) = s(i,j,k) + factor12*dsdtrkd(i,j,k)
 #endif
@@ -428,12 +464,13 @@ module mod_rk
     !
 #if !defined(_IBM)
     if(is_forced(4)) then
-      call bulk_mean(n,nh_s,grid_vol_ratio_f,s,mean)
-      f(4) = velf(4) - mean
+     call bulk_mean(n,nh_s,grid_vol_ratio_f,s,mean)
+     f(4) = tmpf - mean
     end if
 #else
     if(is_forced(4)) then
-      call force_bulk_vel(n,nh_s,dl,dzc,l,psi_s,s,velf(4),f(4))
+     call force_bulk_vel(n,nh_s,dl,dzc,l,psi_s,s,tmpf,f(4))
+     call scal_forcing(n,is_forced(4),f(4),s)
     endif
 #endif
 #if defined(_IBM) && defined(_VOLUME) && defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
@@ -451,7 +488,11 @@ module mod_rk
     do k=1,n(3)
       do j=1,n(2)
         do i=1,n(1)
+#if defined(_CONSTANT_COEFFS_DIFF)
+          s(i,j,k) = s(i,j,k) - 0.5_rp*factor12*dsdtrkdc(i,j,k)
+#else
           s(i,j,k) = s(i,j,k) - 0.5_rp*factor12*dsdtrkd(i,j,k)
+#endif
         end do
       end do
     end do

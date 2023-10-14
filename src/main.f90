@@ -40,7 +40,7 @@ program cans
   use mod_fft            , only: fftini,fftend
   use mod_fillps         , only: fillps
 #if defined(_IBM)
-  use mod_forcing        , only: bulk_mean_ibm, force_vel
+  use mod_forcing        , only: ib_force,bulk_mean_ibm,force_vel
 #endif
 #if defined(_HEAT_TRANSFER)
   use mod_initflow       , only: initflow, inittmp
@@ -60,7 +60,7 @@ program cans
                                  out2d,out3d,write_log_output,write_visu_2d,write_visu_3d
   use mod_param          , only: lz,uref,lref,rey,visc,small, &
 #if defined(_HEAT_TRANSFER)
-                                 itmp,tg0,alph_f,alph_s,cbctmp,bctmp,is_cmpt_wallflux, &
+                                 itmp,tg0,alph_f,alph_s,cbctmp,bctmp,is_cmpt_wallflux,ssource,tmpf, &
 #if defined(_BOUSSINESQ)
                                  tmp0,beta_th, &
 #endif
@@ -75,10 +75,11 @@ program cans
                                  rkcoeff,   &
                                  datadir,   &
                                  cfl,dtmin, &
+                                 time_scheme, &
                                  inivel,    &
                                  dims, &
-                                 gr, &
-                                 is_forced,velf,bforce, &
+                                 gtype,gr, &
+                                 is_wallturb,is_forced,velf,bforce, &
                                  ng,l,dl,dli, &
                                  read_input, &
                                  height_map
@@ -150,7 +151,11 @@ program cans
   real(rp), allocatable, dimension(:,:) :: lambdaxyu,lambdaxyv,lambdaxyw,lambdaxy
   real(rp), allocatable, dimension(:)   :: au,av,aw,bu,bv,bw,cu,cv,cw,aa,bb,cc
 #if defined(_HEAT_TRANSFER)
+#if !defined(_OPENACC)
+  type(C_PTR), dimension(2,2) :: arrplans
+#else
   integer    , dimension(2,2) :: arrplans
+#endif
   real(rp) :: normffts
   real(rp), allocatable, dimension(:,:) :: lambdaxys
   real(rp), allocatable, dimension(:)   :: as,bs,cs
@@ -160,8 +165,8 @@ program cans
   type(rhs_bound) :: rhsbu,rhsbv,rhsbw
   real(rp), allocatable, dimension(:,:,:) :: rhsbx,rhsby,rhsbz
 #endif
-  real(rp) :: dt,dti,dtmax,time,dtrk,dtrki,divtot,divmax
-  integer :: irk,istep
+  real(rp) :: dt,dto,dti,dtmax,time,dtrk,dtrki,divtot,divmax
+  integer :: irk,tstep,istep
   real(rp), allocatable, dimension(:) :: dzc  ,dzf  ,zc  ,zf  ,dzci  ,dzfi, &
                                          dzc_g,dzf_g,zc_g,zf_g,dzci_g,dzfi_g, &
                                          grid_vol_ratio_c,grid_vol_ratio_f
@@ -177,11 +182,12 @@ program cans
   character(len=7  ) :: fldnum
   character(len=4  ) :: chkptnum
   character(len=100) :: filename
-  integer :: i,ii,j,jj,k,kk
+  integer :: i,ii,iii,iiii,j,jj,k,kk
   logical :: is_done,kill
   integer :: rlen
 #if defined(_IBM)
   real(rp), dimension(:,:,:),   allocatable :: psi_u,psi_v,psi_w,psi
+  real(rp), dimension(:,:,:),   allocatable :: fx,fy,fz,fs
   integer,  dimension(:,:,:),   allocatable :: marker
   integer,  dimension(:,:,:),   allocatable :: i_mirror,j_mirror,k_mirror,i_IP1,j_IP1,k_IP1,i_IP2,j_IP2,k_IP2
   real(rp), dimension(:,:,:),   allocatable :: nx_surf,ny_surf,nz_surf,nabs_surf,deltan
@@ -217,7 +223,12 @@ program cans
   nh_s = 1
 #endif
   nh_b = 6
-  !
+  ! time-integration sub-steps
+  if(    time_scheme.eq.'ab2') then
+    tstep = 1
+  elseif(time_scheme.eq.'rk3') then
+    tstep = 3
+  endif
   !
   ! allocate variables
   !
@@ -231,7 +242,6 @@ program cans
 #if defined(_IBM)
   allocate(al(0:n(1)+1,0:n(2)+1,0:n(3)+1))
 #endif
-  !allocate(tmp(0:n(1)+1,0:n(2)+1,0:n(3)+1))
 #endif
   allocate(lambdaxyp(n_z(1),n_z(2)))
   allocate(ap(n_z(3)),bp(n_z(3)),cp(n_z(3)))
@@ -291,6 +301,9 @@ program cans
            psi_w(0:n(1)+1,0:n(2)+1,0:n(3)+1), &
            psi(0:n(1)+1,0:n(2)+1,0:n(3)+1),   &
            marker(0:n(1)+1,0:n(2)+1,0:n(3)+1))
+  allocate(fx(0:n(1)+1,0:n(2)+1,0:n(3)+1), &
+           fy(0:n(1)+1,0:n(2)+1,0:n(3)+1), &
+           fz(0:n(1)+1,0:n(2)+1,0:n(3)+1))
 #if defined(_IBM_BC)
   allocate(    psi_u(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
                psi_v(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
@@ -314,14 +327,14 @@ program cans
              WP1(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6,1:7), &
              WP2(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6,1:7))
 #endif
-  if(height_map)then !Read surface height-map and divide it among subdomains
+  if(height_map)then !Read height-map and divide it among subdomains
      allocate(surf_z(1:ng(1),1:ng(2)))
      allocate(surf_height(1:n(1),1:n(2)))
-     surf_z(:,:) = 0._rp
-     surf_height(:,:) = 0._rp
-     open(unit=3,file='k.dat',status='old',action='read')
-     read(3,*) ((surf_z(i,j), i=1,ng(1)), j=1,ng(2))
-     close(3)
+     surf_z(:,:) = 0.0_rp
+     surf_height(:,:) = 0.0_rp
+     open(unit=99,file='k.dat',status='old',action='read')
+     read(99,*) ((surf_z(i,j), i=1,ng(1)), j=1,ng(2))
+     close(99)
      do j=1,n(2)
         jj=(j+lo(2)-1)
        do i=1,n(1)
@@ -353,7 +366,7 @@ allocate(duconv(n(1),n(2),n(3)), &
   if(myid == 0) print*, '*** Beginning of simulation ***'
   if(myid == 0) print*, '*******************************'
   if(myid == 0) print*, ''
-  call initgrid(inivel,ng(3),gr,lz,dzc_g,dzf_g,zc_g,zf_g)
+  call initgrid(gtype,ng(3),gr,lz,dzc_g,dzf_g,zc_g,zf_g)
   l(3) = lz
   if(myid == 0) then
     inquire(iolength=rlen) 1._rp
@@ -400,7 +413,11 @@ allocate(duconv(n(1),n(2),n(3)), &
   !
   ! test input files before proceeding with the calculation
   !
-  call test_sanity_input(ng,dims,stop_type,cbcvel,cbcpre,bcvel,bcpre,is_forced)
+  call test_sanity_input(ng,dims,stop_type,cbcvel,cbcpre,bcvel,bcpre,is_forced &
+#if defined(_HEAT_TRANSFER)
+                               ,alph_f,alph_s &
+#endif
+                               )
   !
   ! initialize Poisson solver
   !
@@ -464,7 +481,12 @@ allocate(duconv(n(1),n(2),n(3)), &
     istep = 0
     time = 0.0_rp
     !$acc update self(zc,dzc,dzf)
-    call initflow(inivel,ng,lo,zc/lz,dzc/lz,dzf/lz,visc,u,v,w,p)
+    call initflow(inivel,bcvel,ng,lo,l,dl,zc,zf,dzc,dzf,visc, &
+                  is_forced(1),velf,bforce,is_wallturb,u,v,w,p &
+#if defined(_HEAT_TRANSFER)
+                  ,tg0, &
+#endif
+                  )
 #if defined(_HEAT_TRANSFER)
     call inittmp(itmp,nh_s,zc,lz,ng,u,s)
     if(myid == 0) print*, '*** Heat solver enabled ***'
@@ -473,17 +495,11 @@ allocate(duconv(n(1),n(2),n(3)), &
   else
     call load_all('r',trim(datadir)//'fld.bin',MPI_COMM_WORLD,ng,[nh_v,nh_v,nh_v],lo,hi,time,istep,u,v,w,p)
 #if defined(_HEAT_TRANSFER)
-    ! tmp(0:n(1)+1,0:n(2)+1,0:n(3)+1) = 0._rp
-    !
     call load_one('r',trim(datadir)//'tmp.bin',MPI_COMM_WORLD,ng,[nh_s,nh_s,nh_s],lo,hi,time,istep,s)
-    !
-    ! s(1:n(1),1:n(2),1:n(3)) = tmp(1:n(1),1:n(2),1:n(3))
-    !
-    ! deallocate(tmp)
 #endif
     if(reset_time) then
-      istep = 0
-      time = 0.0_rp
+     istep = 0
+     time = 0.0_rp
     endif
     if(myid == 0) print*, '*** Checkpoint loaded at time = ', time, 'time step = ', istep, '. ***'
   end if
@@ -504,15 +520,14 @@ allocate(duconv(n(1),n(2),n(3)), &
   call initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,nh_p,halo,ng,nb,lo,hi,psi_u,psi_v,psi_w,psi, &
                0,zc,zf,zf_g,dzc,dzf,dl,dli)
 #endif
-  !$acc wait
   !
   ! output solid volume fractions
   !
-  !$acc update self(psi_u,psi_v,psi_w,psi)
+  !$acc update self(psi,psi_u,psi_v,psi_w)
+  call out1d(trim(datadir)//'psi.out'  ,ng,lo,hi,3,l,dl,zc_g,dzf,psi  )
   call out1d(trim(datadir)//'psi_u.out',ng,lo,hi,3,l,dl,zc_g,dzf,psi_u)
   call out1d(trim(datadir)//'psi_v.out',ng,lo,hi,3,l,dl,zc_g,dzf,psi_v)
   call out1d(trim(datadir)//'psi_w.out',ng,lo,hi,3,l,dl,zf_g,dzc,psi_w)
-  call out1d(trim(datadir)//'psi.out'  ,ng,lo,hi,3,l,dl,zc_g,dzf,psi  )
   if(myid == 0) print*, '*** IBM Initialized ***'
 #endif
 
@@ -527,8 +542,18 @@ allocate(duconv(n(1),n(2),n(3)), &
    al(1:n(1),1:n(2),1:n(3)) = alph_f
    do k=1,n(3)
      do j=1,n(2)
+       iii = 17+lo(1)-1
+       iiii = 32+lo(1)-1
        do i=1,n(1)
-        if (psi(i,j,k).eq.1.0_rp) al(i,j,k) = alph_s ! if in solid
+        ii=(i+lo(1)-1)
+        if (mod(ii,iii) == 0) then
+         iii = iii + 1
+         if (psi(i,j,k) == 1.0_rp) al(i,j,k) = alph_s
+         if (mod(ii,iiii)== 0) then
+          iii = iii + 16
+          iiii = iiii + 32
+         endif
+        endif
        end do
      end do
    end do
@@ -538,7 +563,9 @@ allocate(duconv(n(1),n(2),n(3)), &
   !
   ! Impose zero velocity in IB regions for initial condition
   !
-  call force_vel(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fibm)
+  !$acc enter data create(fx,fy,fz,fibm)
+  call ib_force(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fx,fy,fz,fibm)
+  ! call force_vel(n,u,v,w,fx,fy,fz)
 #endif
   call bounduvw(cbcvel,n,nh_v,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,u,v,w)
   call boundp(cbcpre,n,nh_p,halo,bcpre,nb,is_bound,dl,dzc,p)
@@ -589,12 +616,18 @@ allocate(duconv(n(1),n(2),n(3)), &
   call write_visu_3d(trim(datadir),'psiw','psiw_fld_'//fldnum//'.bin','log_visu_3d.out','Solid_Psi_w', &
                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
                      psi_w(1:n(1),1:n(2),1:n(3)))
+#if defined(_HEAT_TRANSFER)
+  !$acc update self(al)
+  call write_visu_3d(trim(datadir),'cond','cond_fld_'//fldnum//'.bin','log_visu_3d.out','Conductivity', &
+                     (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
+                     al(1:n(1),1:n(2),1:n(3)))
+#endif
 #endif
   !
   call chkdt(n,dl,dzci,dzfi,visc,u,v,w,dtmax)
   dt = min(cfl*dtmax,dtmin)
   if(myid == 0) print*, 'dtmax = ', dtmax, 'dt = ',dt
-  dti = 1./dt
+  dti = 1.0_rp/dt
   kill = .false.
 #if defined(_LPP)
   if(myid == 0) print*, '*** Initializing Lagrangian point particles ***'
@@ -627,12 +660,12 @@ allocate(duconv(n(1),n(2),n(3)), &
 #if defined(_IBM)
     fibmtot(:) = 0.0_rp
 #endif
-    do irk=1,3
+    do irk=1,tstep
       dtrk = sum(rkcoeff(:,irk))*dt
       dtrki = dtrk**(-1)
 #if defined(_HEAT_TRANSFER)
-      call rk_scal(rkcoeff(:,irk),n,nh_v,nh_s,dli,zc,zf,dzci,dzfi,grid_vol_ratio_f,dt,l,u,v,w,alph_f, &
-                   is_bound,is_forced,is_cmpt_wallflux,velf, &
+      call rk_scal(time_scheme,rkcoeff(:,irk),n,nh_v,nh_s,dli,zc,zf,dzci,dzfi,grid_vol_ratio_f,dt,dto,l,u,v,w,alph_f, &
+                   is_bound,is_forced,is_cmpt_wallflux,tmpf,ssource, &
                    dl,dzc,dzf, &
 #if defined(_IBM)
                    alph_s,al, &
@@ -655,11 +688,12 @@ allocate(duconv(n(1),n(2),n(3)), &
 #endif
       call boundp(cbctmp,n,nh_s,halo,bctmp,nb,is_bound,dl,dzc,s)
 #endif
-      call rk(rkcoeff(:,irk),n,nh_v,nh_s,dli,l,zc,zf,dzci,dzfi,grid_vol_ratio_c,grid_vol_ratio_f,visc,dt,p, &
+      call rk(time_scheme,rkcoeff(:,irk),n,nh_v,nh_s,dli,l,zc,zf,dzci,dzfi,grid_vol_ratio_c,grid_vol_ratio_f,visc,dt,dto,p, &
               is_bound,is_forced,velf,bforce,tauxo,tauyo,tauzo,u,v,w, &
               dl,dzc,dzf, &
 #if defined(_IBM)
               psi,psi_u,psi_v,psi_w, &
+              fx,fy,fz, &
               fibm, &
 #endif
 #if defined(_HEAT_TRANSFER)
@@ -669,14 +703,11 @@ allocate(duconv(n(1),n(2),n(3)), &
               duconv,dvconv,dwconv, &
 #endif
               f)
-#if !defined(_IBM)
-      call bulk_forcing(n,is_forced,f,u,v,w)
-#endif
 #if defined(_IMPDIFF)
 #if defined(_HEAT_TRANSFER)
       !$OMP PARALLEL WORKSHARE
       !$acc kernels present(rhsbx,rhsby,rhsbz,rhsbs) async(1)
-      alpha = -.5*alph_f*dtrk
+      alpha = -0.5_rp*max(alph_f,alph_s)*dtrk
       rhsbx(:,:,0:1) = rhsbs%x(:,:,0:1)*alpha
       rhsby(:,:,0:1) = rhsbs%y(:,:,0:1)*alpha
       rhsbz(:,:,0:1) = rhsbs%z(:,:,0:1)*alpha
@@ -686,7 +717,7 @@ allocate(duconv(n(1),n(2),n(3)), &
       !$acc kernels default(present) async(1)
       !$OMP PARALLEL WORKSHARE
       aa(:) = as(:)*alpha
-      bb(:) = bs(:)*alpha + 1.
+      bb(:) = bs(:)*alpha + 1.0_rp
       cc(:) = cs(:)*alpha
 #if !defined(_IMPDIFF_1D)
       lambdaxy(:,:) = lambdaxys(:,:)*alpha
@@ -697,7 +728,7 @@ allocate(duconv(n(1),n(2),n(3)), &
       call solver(n,ng,arrplans,normffts,lambdaxy,aa,bb,cc,cbctmp,['c','c','c'],s)
 #endif
 #endif
-      alpha = -.5*visc*dtrk
+      alpha = -0.5_rp*visc*dtrk
       !$OMP PARALLEL WORKSHARE
       !$acc kernels present(rhsbx,rhsby,rhsbz,rhsbu) async(1)
 #if !defined(_IMPDIFF_1D)
@@ -711,7 +742,7 @@ allocate(duconv(n(1),n(2),n(3)), &
       !$acc kernels default(present) async(1)
       !$OMP PARALLEL WORKSHARE
       aa(:) = au(:)*alpha
-      bb(:) = bu(:)*alpha + 1.
+      bb(:) = bu(:)*alpha + 1.0_rp
       cc(:) = cu(:)*alpha
 #if !defined(_IMPDIFF_1D)
       lambdaxy(:,:) = lambdaxyu(:,:)*alpha
@@ -736,7 +767,7 @@ allocate(duconv(n(1),n(2),n(3)), &
       !$acc kernels default(present) async(1)
       !$OMP PARALLEL WORKSHARE
       aa(:) = av(:)*alpha
-      bb(:) = bv(:)*alpha + 1.
+      bb(:) = bv(:)*alpha + 1.0_rp
       cc(:) = cv(:)*alpha
 #if !defined(_IMPDIFF_1D)
       lambdaxy(:,:) = lambdaxyv(:,:)*alpha
@@ -761,7 +792,7 @@ allocate(duconv(n(1),n(2),n(3)), &
       !$acc kernels default(present) async(1)
       !$OMP PARALLEL WORKSHARE
       aa(:) = aw(:)*alpha
-      bb(:) = bw(:)*alpha + 1.
+      bb(:) = bw(:)*alpha + 1.0_rp
       cc(:) = cw(:)*alpha
 #if !defined(_IMPDIFF_1D)
       lambdaxy(:,:) = lambdaxyw(:,:)*alpha
@@ -792,6 +823,7 @@ allocate(duconv(n(1),n(2),n(3)), &
 #if defined(_IBM)
     fibmtot(:) = fibmtot(:)*dti
 #endif
+    dto = dt
     !
     ! check simulation stopping criteria
     !
@@ -816,7 +848,7 @@ allocate(duconv(n(1),n(2),n(3)), &
         ! is_done = .true.
         ! kill = .true.
       ! end if
-      dti = 1._rp/dt
+      dti = 1.0_rp/dt
       call chkdiv(lo,hi,dli,dzfi,u,v,w,divtot,divmax)
       if(mod(istep,ioutput) == 0 .and. myid == 0) print*, 'Total divergence = ', divtot, '| Maximum divergence = ', divmax
 #if !defined(_MASK_DIVERGENCE_CHECK)

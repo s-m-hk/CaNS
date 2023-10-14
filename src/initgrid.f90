@@ -12,25 +12,31 @@ module mod_initgrid
   private
   public initgrid
   contains
-  subroutine initgrid(inivel,n,gr,lz,dzc,dzf,zc,zf)
+  subroutine initgrid(gtype,n,gr,lz,dzc,dzf,zc,zf)
     !
     ! initializes the non-uniform grid along z
     !
     implicit none
-    character(len=3), intent(in) :: inivel
-    integer , intent(in ) :: n
-    real(rp), intent(in ) :: gr
-    real(rp), intent(inout) :: lz
+    integer, parameter :: CLUSTER_TWO_END              = 1, &
+                          CLUSTER_ONE_END              = 2, &
+                          CLUSTER_ONE_END_R            = 3, &
+                          CLUSTER_MIDDLE               = 4
+    integer , intent(in ) :: gtype,n
+    real(rp), intent(in ) :: gr,lz
     real(rp), intent(out), dimension(0:n+1) :: dzc,dzf,zc,zf
     real(rp) :: z0
     integer :: k
     logical :: read_z
     procedure (), pointer :: gridpoint => null()
-    select case(inivel)
-    case('zer','log','poi','cou')
+    select case(gtype)
+    case(CLUSTER_TWO_END)
       gridpoint => gridpoint_cluster_two_end
-    case('hcl','hcp','tbl')
+    case(CLUSTER_ONE_END)
       gridpoint => gridpoint_cluster_one_end
+    case(CLUSTER_ONE_END_R)
+      gridpoint => gridpoint_cluster_one_end_r
+    case(CLUSTER_MIDDLE)
+      gridpoint => gridpoint_cluster_middle
     case default
       gridpoint => gridpoint_cluster_two_end
     end select
@@ -38,9 +44,9 @@ module mod_initgrid
     !
     ! step 1) determine coordinates of cell faces zf
     !
-    zf(0) = 0._rp
+    zf(0) = 0.
     do k=1,n
-      z0  = (k-0._rp)/(1._rp*n)
+      z0  = (k-0.)/(1.*n)
 #if !defined(_GRIDPOINT_NATURAL_CHANNEL)
       call gridpoint(gr,z0,zf(k))
 #else
@@ -73,7 +79,7 @@ module mod_initgrid
     ! step 4) determine grid spacing between centers dzc
     !
     do k=0,n
-      dzc(k) = .5_rp*(dzf(k)+dzf(k+1))
+      dzc(k) = .5*(dzf(k)+dzf(k+1))
     end do
     dzc(n+1) = dzc(n)
     !
@@ -92,7 +98,6 @@ module mod_initgrid
      enddo
       zc(0)=2._rp*zf(0)-zc(1)
     endif
-    return
   end subroutine initgrid
   !
   ! grid stretching functions
@@ -106,8 +111,8 @@ module mod_initgrid
     implicit none
     real(rp), intent(in) :: alpha,z0
     real(rp), intent(out) :: z
-    if(alpha /= 0._rp) then
-      z = 0.5_rp*(1._rp+tanh((z0-0.5_rp)*alpha)/tanh(alpha/2._rp))
+    if(alpha /= 0.) then
+      z = 0.5*(1.+tanh((z0-0.5)*alpha)/tanh(alpha/2.))
       !z = 0.5*(1.+erf( (z0-0.5)*alpha)/erf( alpha/2.))
     else
       z = z0
@@ -121,12 +126,26 @@ module mod_initgrid
     real(rp), intent(in) :: alpha,z0
     real(rp), intent(out) :: z
     if(alpha /= 0.) then
-      z = 1.0_rp*(1._rp+tanh((z0-1.0_rp)*alpha)/tanh(alpha/1._rp))
+      z = 1.0*(1.+tanh((z0-1.0)*alpha)/tanh(alpha/1.))
       !z = 1.0*(1.+erf( (z0-1.0)*alpha)/erf( alpha/1.))
     else
       z = z0
     end if
   end subroutine gridpoint_cluster_one_end
+  subroutine gridpoint_cluster_one_end_r(alpha,r0,r)
+    !
+    ! clustered at the upper side
+    !
+    implicit none
+    real(rp), intent(in ) :: alpha,r0
+    real(rp), intent(out) :: r
+    if(alpha /= 0._rp) then
+      r = 1._rp-1.0_rp*(1._rp+tanh((1._rp-r0-1.0_rp)*alpha)/tanh(alpha/1._rp))
+      !r = 1._rp-1.0_rp*(1._rp+erf( (1._rp-r0-1.0_rp)*alpha)/erf( alpha/1._rp))
+    else
+      r = r0
+    end if
+  end subroutine gridpoint_cluster_one_end_r
   subroutine gridpoint_cluster_middle(alpha,z0,z)
     !
     ! clustered in the middle
@@ -175,10 +194,12 @@ module mod_initgrid
     !
     n = nzg/2._rp
     retau = 1._rp/(1._rp+(n/kb)**2)*(dyp*n+(3._rp/4._rp*alpha*c_eta*n)**(4._rp/3._rp)*(n/kb)**2)
-    if((kg==1).and.(myid==1)) print*,'*** Grid targeting Re_tau = ***',retau
+#if defined(_DEBUG)
+    if((kg==1).and.(myid==1)) print*,'Grid targeting Retau = ',retau
+#endif
     k = 1._rp*min(kg,(nzg-kg))
     !
-    ! determine z/(2h)
+    ! dermine z/(2h)
     !
     z = 1._rp/(1._rp+(k/kb)**2)*(dyp*k+(3._rp/4._rp*alpha*c_eta*k)**(4._rp/3._rp)*(k/kb)**2)/(2._rp*retau)
     if( kg > nzg-kg ) z = 1._rp-z

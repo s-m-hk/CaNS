@@ -34,19 +34,19 @@ module mod_chkdt
     real(rp), save :: dlmin
     logical , save :: is_first = .true.
     !
-    dxi = 1._rp/dl(1)
-    dyi = 1._rp/dl(2)
-    dzi = 1._rp/dl(3)
+    dxi = 1.0_rp/dl(1)
+    dyi = 1.0_rp/dl(2)
+    dzi = 1.0_rp/dl(3)
     if(is_first) then ! calculate dlmin only once
       is_first = .false.
       dlmin    = minval(dl(1:2))
 #if !defined(_IMPDIFF_1D)
-      dlmin    = min(dlmin,minval(1._rp/dzfi))
+      dlmin    = min(dlmin,minval(1.0_rp/dzfi))
 #endif
       call MPI_ALLREDUCE(MPI_IN_PLACE,dlmin,1,MPI_REAL_RP,MPI_MIN,MPI_COMM_WORLD,ierr)
     end if
     !
-    dti = 0._rp
+    dti = 0.0_rp
     !$acc data copy(dti) async(1)
     !$acc parallel loop collapse(3) default(present) private(ux,uy,uz,vx,vy,vz,wx,wy,wz,dtix,dtiy,dtiz) reduction(max:dti) async(1)
     !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)  PRIVATE(ux,uy,uz,vx,vy,vz,wx,wy,wz,dtix,dtiy,dtiz) REDUCTION(max:dti)
@@ -72,14 +72,14 @@ module mod_chkdt
     !$acc end data
     !$acc wait(1)
     call MPI_ALLREDUCE(MPI_IN_PLACE,dti,1,MPI_REAL_RP,MPI_MAX,MPI_COMM_WORLD,ierr)
-    if(dti == 0._rp) dti = 1._rp
+    if(dti == 0.0_rp) dti = 1.0_rp
 #if defined(_IMPDIFF) && !defined(_IMPDIFF_1D)
-    dtmax = sqrt(3._rp)/dti
+    dtmax = sqrt(3.0_rp)/dti
 #else
-    dtmax = min(1.65_rp/12._rp/visc*dlmin**2,sqrt(3._rp)/dti)
+    dtmax = min(1.65_rp/12.0_rp/visc*dlmin**2,sqrt(3.0_rp)/dti)
 #if defined(_HEAT_TRANSFER)
-    dthf   = 1.65_rp/12._rp/alph_f*dlmin**2
-    dths   = 1.65_rp/12._rp/alph_s*dlmin**2
+    dthf   = 1.65_rp/12.0_rp/alph_f*dlmin**2
+    dths   = 1.65_rp/12.0_rp/alph_s*dlmin**2
     dtmax  = min(dtmax,dthf,dths)
 #endif
 #endif
