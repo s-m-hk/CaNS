@@ -20,21 +20,16 @@ module mod_rk
   use mod_scal   ,  only: scal,cmpt_scalflux,scal_forcing
   use mod_source ,  only: grav_src
 #if defined(_IBM)
-  use mod_forcing,  only: ib_force,force_vel,bulk_mean_ibm, &
+  use mod_forcing,  only: ib_force,bulk_vel, &
 #if defined(_HEAT_TRANSFER)
                           force_scal, &
 #endif
-                          force_bulk_vel
+                          force_vel
 #endif
   use mod_common_mpi, only: myid
   use mod_utils,      only: bulk_mean,swap
   use mod_types
   implicit none
-#if defined(_SINGLE_PRECISION)
-  real(rp), parameter :: eps = 1.e-8_rp
-#else
-  real(rp), parameter :: eps = 1.e-16_rp
-#endif
   private
   public rk,rk_scal
   contains
@@ -304,7 +299,6 @@ module mod_rk
     call bulk_forcing(n,is_forced,f,u,v,w)
 #if defined(_IBM)
     call ib_force(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fx,fy,fz,fibm)
-    ! call force_vel(n,u,v,w,fx,fy,fz)
 #endif
 #if defined(_IMPDIFF)
     !
@@ -376,7 +370,7 @@ module mod_rk
 #endif
 #endif
     real(rp), dimension(3)                                      :: flux
-    real(rp)                                                    :: mean
+    real(rp)                                                    :: mean,vol_f
     integer                                                     :: i,j,k
     logical, save                                               :: is_first = .true.
     !
@@ -431,9 +425,9 @@ module mod_rk
       fluxo(:) = flux(:)
     end if
     !
-    call scal(n(1),n(2),n(3),dli(1),dli(2),dli(3),dzci,dzfi,alph_f,alph_s, &
+    call scal(n(1),n(2),n(3),dli(1),dli(2),dli(3),dzci,dzfi,alph_f, &
 #if defined(_IBM)
-              al,psi_s, &
+              alph_s,al,psi_s, &
 #endif
               u,v,w,s, &
 #if defined(_IMPDIFF)
@@ -469,7 +463,8 @@ module mod_rk
     end if
 #else
     if(is_forced(4)) then
-     call force_bulk_vel(n,nh_s,dl,dzc,l,psi_s,s,tmpf,f(4))
+     call bulk_vel(n,nh_s,dl,dzc,l,psi_s,s,mean,vol_f)
+     call force_vel(n,1,dl,dzf,l,psi_s,s,tmpf,vol_f,mean,f(4))
      call scal_forcing(n,is_forced(4),f(4),s)
     endif
 #endif
@@ -504,6 +499,7 @@ module mod_rk
                                psi_u,psi_v,psi_w,&
 #endif
                                u,v,w,f)
+    use mod_param,      only: force_fluid_only
     implicit none
     integer , intent(in   ), dimension(3)  :: n
     real(rp), intent(in   ), dimension(3)  :: l,dl
@@ -516,33 +512,48 @@ module mod_rk
 #endif
     real(rp), intent(inout), dimension(0:,0:,0:) :: u,v,w
     real(rp), intent(out  ), dimension(3) :: f
-    real(rp) :: mean
+    real(rp) :: vol_f,mean
     !
     ! bulk velocity forcing
     !
     f(1:3) = 0.0_rp
 #if !defined(_IBM)
     if(is_forced(1)) then
-      call bulk_mean(n,1,grid_vol_ratio_c,u,mean)
-      f(1) = velf(1) - mean
+     call bulk_mean(n,1,grid_vol_ratio_c,u,mean)
+     f(1) = velf(1) - mean
     end if
     if(is_forced(2)) then
-      call bulk_mean(n,1,grid_vol_ratio_c,v,mean)
-      f(2) = velf(2) - mean
+     call bulk_mean(n,1,grid_vol_ratio_c,v,mean)
+     f(2) = velf(2) - mean
     end if
     if(is_forced(3)) then
-      call bulk_mean(n,1,grid_vol_ratio_c,w,mean)
-      f(3) = velf(3) - mean
+     call bulk_mean(n,1,grid_vol_ratio_c,w,mean)
+     f(3) = velf(3) - mean
     end if
 #else
     if(is_forced(1)) then
-      call force_bulk_vel(n,1,dl,dzf,l,psi_u,u,velf(1),f(1))
+     call bulk_vel(n,1,dl,dzf,l,psi_u,u,mean,vol_f)
+     if(force_fluid_only) then
+      call force_vel(n,1,dl,dzf,l,psi_u,u,velf(1),vol_f,mean,f(1))
+     else
+      f(1) = velf(1) - mean
+     endif
     endif
     if(is_forced(2)) then
-      call force_bulk_vel(n,1,dl,dzf,l,psi_v,v,velf(2),f(2))
+     call bulk_vel(n,1,dl,dzf,l,psi_v,v,mean,vol_f)
+     if(force_fluid_only) then
+      call force_vel(n,1,dl,dzf,l,psi_v,v,velf(2),vol_f,mean,f(2))
+     else
+      f(2) = velf(2) - mean
+     endif
     endif
     if(is_forced(3)) then
-      call force_bulk_vel(n,1,dl,dzc,l,psi_w,w,velf(3),f(3))
+     call bulk_vel(n,1,dl,dzc,l,psi_w,w,mean,vol_f)
+     if(force_fluid_only) then
+      call force_vel(n,1,dl,dzc,l,psi_w,w,velf(3),vol_f,mean,f(3))
+     else
+      f(3) = velf(3) - mean
+     endif
     endif
 #endif
   end subroutine cmpt_bulk_forcing

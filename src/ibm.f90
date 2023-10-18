@@ -1,12 +1,11 @@
 module mod_IBM
 #if defined(_IBM)
 use mpi
-use decomp_2d
 use mod_param, only: lx,ly,lz,dx,dy,dxi,dyi,dims, &
                      surface_type,solid_height_ratio,Rotation_angle, &
                      sx, sy, sz, depth, rod, &
                      small, nb
-use mod_common_mpi, only: myid, ipencil => ipencil_axis
+use mod_common_mpi, only: myid
 use mod_types
 implicit none
 private
@@ -26,46 +25,65 @@ integer ,intent(in), dimension(3) :: n,ng,lo,hi
 real(rp),intent(in), dimension(0:) :: zc,zf,zf_g,dzc,dzf
 real(rp),intent(inout),dimension(0:,0:,0:) :: cell_phi_tag
 real(rp)::xxx,yyy,zzz,ratio
-integer i,j,k,nx,ny,nz
+integer i,j,k
 logical :: ghost
-nx = n(1)
-ny = n(2)
-nz = n(3)
+!
 #if !defined(_DECOMP_Z)
 ratio = 1.0_rp
 #else
 ratio = solid_height_ratio
 #endif
+!
 if(trim(surface_type) == 'Lattice') then
-do k=1,int(ratio*nz)
- do j=1,n(2)
-  do i=1,n(1)
-     xxx = (i+lo(1)-1-0.5)*dx
-     yyy = (j+lo(2)-1-0.5)*dy
-     zzz = zc(k)
-     ghost = lattice(xxx,yyy,zzz,zf_g,dzc,lx,ly,lz)
-     if (ghost) then
-       cell_phi_tag(i,j,k) = 1.0_rp
-     endif
+ do k=1,int(ratio*n(3))
+  do j=1,n(2)
+   do i=1,n(1)
+    xxx = (i+lo(1)-1-0.5)*dx
+    yyy = (j+lo(2)-1-0.5)*dy
+    zzz = zf(k)
+    ghost = lattice(xxx,yyy,zzz,zf_g,dzc,lx,ly,lz)
+    if (ghost) cell_phi_tag(i,j,k) = 1.0_rp
+   enddo
   enddo
  enddo
-enddo
 elseif(trim(surface_type) == 'SolidWall') then
-do k=1,int(ratio*nz)
- do j=1,n(2)
-  do i=1,n(1)
-     xxx = (i+lo(1)-1-0.5)*dx
-     yyy = (j+lo(2)-1-0.5)*dy
-     zzz = zc(k)
-     ghost = SolidWall(xxx,yyy,zzz,zf_g,dzc,lx,ly,lz)
-     if (ghost) then
-       cell_phi_tag(i,j,k) = 1.0_rp
-     endif
+#if !defined(_DECOMP_Z)
+ if( (.not.is_bound(1,3)).and.(lo(3).lt.int(ng(3)/2)) ) then
+#endif
+ do k=1,int(0.4*n(3))
+  do j=1,n(2)
+   do i=1,n(1)
+    xxx = (i+lo(1)-1-0.5)*dx
+    yyy = (j+lo(2)-1-0.5)*dy
+    zzz = zf(k)
+    ghost = SolidWallBottom(xxx,yyy,zzz,zf_g,lx,ly,lz)
+    if (ghost) cell_phi_tag(i,j,k) = 1.0_rp
+   enddo
   enddo
  enddo
-enddo
+#if !defined(_DECOMP_Z)
+ endif
+#endif
+#if defined(_SYMMETRIC)
+#if !defined(_DECOMP_Z)
+ if( (.not.is_bound(0,3)).and.(lo(3).gt.int(ng(3)/2)) ) then
+#endif
+ do k=n(3),n(3)-int(0.4*n(3)),-1
+  do j=1,n(2)
+   do i=1,n(1)
+    xxx = (i+lo(1)-1-0.5)*dx
+    yyy = (j+lo(2)-1-0.5)*dy
+    zzz = zf(k)
+    ghost = SolidWallTop(xxx,yyy,zzz,zf_g,lx,ly,lz)
+    if (ghost) cell_phi_tag(i,j,k) = 1.0_rp
+   enddo
+  enddo
+ enddo
+#if !defined(_DECOMP_Z)
+ endif
+#endif
 endif
-
+#endif
 end subroutine IBM_Mask
 #endif
 !
@@ -505,33 +523,47 @@ function lattice(xIn, yIn, zIn, zf_g, dz, lengthx, lengthy, lengthz)
 
 end function lattice
 !
-function SolidWall(xIn, yIn, zIn, zf_g, dz, lengthx, lengthy, lengthz)
+function SolidWallBottom(xIn, yIn, zIn, zf_g, lengthx, lengthy, lengthz)
   implicit none
-  logical :: SolidWall,read_z
-  real(rp), dimension(0:), intent(in) :: zf_g,dz
+  logical :: SolidWallBottom,read_z
+  real(rp), dimension(0:), intent(in) :: zf_g
   real(rp), intent(in) :: xIn,yIn,zIn,lengthx,lengthy,lengthz
-  real(rp) :: x0,y0,x1,y1,z0,z1,z_offset
-  real(rp) :: d
-  integer :: i,j,k,N_x,N_y,N_z
-	   
-	   SolidWall = .false.
-	   
-	   d = rod  !Rod thickness
-	   
-	   N_z = INT(depth/sz)
-	   N_y = INT(lengthy/sy)
-	   N_x = INT(lengthx/sx)
+  real(rp) :: z_offset
+  integer :: i,j,k
 
-       inquire(file='zf.dat',exist=read_z)
-	   if (read_z) then
-	    z_offset = zIn - zf_g(0)
-       else
-	    z_offset = zIn
-       endif
-	   
-	  if (z_offset.le.depth) SolidWall = .true.
+	SolidWallBottom = .false.
 
-end function SolidWall
+    inquire(file='zf.dat',exist=read_z)
+	if (read_z) then
+	 z_offset = zIn - zf_g(0)
+    else
+	 z_offset = zIn
+    endif
+
+	if (z_offset.le.depth) SolidWallBottom = .true.
+end function SolidWallBottom
+!
+function SolidWallTop(xIn, yIn, zIn, zf_g, lengthx, lengthy, lengthz)
+  implicit none
+  logical :: SolidWallTop,read_z
+  real(rp), dimension(0:), intent(in) :: zf_g
+  real(rp), intent(in) :: xIn,yIn,zIn,lengthx,lengthy,lengthz
+  real(rp) :: z_offset,z_top
+  integer :: i,j,k
+
+    SolidWallTop = .false.
+
+    inquire(file='zf.dat',exist=read_z)
+	if (read_z) then
+	 z_offset = zIn - zf_g(0)
+    else
+	 z_offset = zIn
+    endif
+
+    z_top = lengthz - depth
+
+    if (z_offset.ge.z_top) SolidWallTop = .true.
+end function SolidWallTop
 !
 function height_map(xxx,yyy,zzz,ii,jj,dxl,dyl,dz,n,surf_height,lo,hi)
 implicit none

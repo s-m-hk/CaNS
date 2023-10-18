@@ -1,6 +1,7 @@
-Lattice               !surface_type
-1                     !solid_height_ratio
-0.                    !Rotation_angle
-0.0 0.0 0.0           !sx, sy, sz        (pitch lengths for lattice structure)
-0.0                   !rod               (rod thickness for lattice structure)
-0.3                   !depth             (depth/thickness of structure)
+SolidWall      !surface_type
+1.0            !solid_height_ratio
+0.0            !Rotation_angle
+0.0 0.0 0.0    !sx, sy, sz (pore dimensions)
+0.0            !rod (rod thickness)
+1.             !depth (depth of structure)
+F              !force_fluid_only  (apply bulk forcing in fluid regions only)

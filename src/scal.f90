@@ -12,9 +12,9 @@ module mod_scal
   public scal,cmpt_scalflux,scal_forcing
   contains
 #if !defined(_WENO)
-  subroutine scal(nx,ny,nz,dxi,dyi,dzi,dzci,dzfi,alph_f,alph_s, &
+  subroutine scal(nx,ny,nz,dxi,dyi,dzi,dzci,dzfi,alph_f, &
 #if defined(_IBM)
-                  alph,psi, &
+                  alph_s,alph,psi, &
 #endif
                   u,v,w,s, &
 #if defined(_IMPDIFF)
@@ -27,9 +27,10 @@ module mod_scal
     !
     implicit none
     integer , intent(in) :: nx,ny,nz
-    real(rp), intent(in) :: dxi,dyi,dzi,alph_f,alph_s
+    real(rp), intent(in) :: dxi,dyi,dzi,alph_f
     real(rp), intent(in), dimension(0:) :: dzci,dzfi
 #if defined(_IBM)
+    real(rp), intent(in) :: alph_s
     real(rp), intent(in), dimension(0:,0:,0:) :: alph
     real(rp), intent(in), dimension(0:,0:,0:) :: psi
 #endif
@@ -46,7 +47,9 @@ module mod_scal
     real(rp) :: dsdxp,dsdxm,dsdyp,dsdym,dsdzp,dsdzm
     real(rp) :: source,maxalph 
     !
+#if defined(_IBM)
     maxalph = max(alph_f,alph_s)
+#endif
     !
     !$acc parallel loop collapse(3) default(present) private(usip,usim,vsjp,vsjm,wskp,wskm,dsdxp,dsdxm,dsdyp,dsdym,dsdzp,dsdzm) async(1)
     !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)  PRIVATE(usip,usim,vsjp,vsjm,wskp,wskm,dsdxp,dsdxm,dsdyp,dsdym,dsdzp,dsdzm)

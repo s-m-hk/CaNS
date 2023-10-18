@@ -40,7 +40,7 @@ program cans
   use mod_fft            , only: fftini,fftend
   use mod_fillps         , only: fillps
 #if defined(_IBM)
-  use mod_forcing        , only: ib_force,bulk_mean_ibm,force_vel
+  use mod_forcing        , only: ib_force,bulk_vel
 #endif
 #if defined(_HEAT_TRANSFER)
   use mod_initflow       , only: initflow, inittmp
@@ -170,7 +170,7 @@ program cans
   real(rp), allocatable, dimension(:) :: dzc  ,dzf  ,zc  ,zf  ,dzci  ,dzfi, &
                                          dzc_g,dzf_g,zc_g,zf_g,dzci_g,dzfi_g, &
                                          grid_vol_ratio_c,grid_vol_ratio_f
-  real(rp) :: meanvelu,meanvelv,meanvelw
+  real(rp) :: meanvelu,meanvelv,meanvelw,meanpsiu,meanpsiv,meanpsiw
   real(rp), dimension(3) :: dpdl
   !real(rp), allocatable, dimension(:) :: var
   real(rp), dimension(42) :: var
@@ -482,13 +482,9 @@ allocate(duconv(n(1),n(2),n(3)), &
     time = 0.0_rp
     !$acc update self(zc,dzc,dzf)
     call initflow(inivel,bcvel,ng,lo,l,dl,zc,zf,dzc,dzf,visc, &
-                  is_forced(1),velf,bforce,is_wallturb,u,v,w,p &
+                  is_forced(1),velf,bforce,is_wallturb,u,v,w,p)
 #if defined(_HEAT_TRANSFER)
-                  ,tg0, &
-#endif
-                  )
-#if defined(_HEAT_TRANSFER)
-    call inittmp(itmp,nh_s,zc,lz,ng,u,s)
+    call inittmp(itmp,nh_s,zc,lz,ng,u,s,tg0)
     if(myid == 0) print*, '*** Heat solver enabled ***'
 #endif
     if(myid == 0) print*, '*** Initial condition successfully set ***'
@@ -542,18 +538,8 @@ allocate(duconv(n(1),n(2),n(3)), &
    al(1:n(1),1:n(2),1:n(3)) = alph_f
    do k=1,n(3)
      do j=1,n(2)
-       iii = 17+lo(1)-1
-       iiii = 32+lo(1)-1
        do i=1,n(1)
-        ii=(i+lo(1)-1)
-        if (mod(ii,iii) == 0) then
-         iii = iii + 1
          if (psi(i,j,k) == 1.0_rp) al(i,j,k) = alph_s
-         if (mod(ii,iiii)== 0) then
-          iii = iii + 16
-          iiii = iiii + 32
-         endif
-        endif
        end do
      end do
    end do
@@ -565,7 +551,6 @@ allocate(duconv(n(1),n(2),n(3)), &
   !
   !$acc enter data create(fx,fy,fz,fibm)
   call ib_force(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fx,fy,fz,fibm)
-  ! call force_vel(n,u,v,w,fx,fy,fz)
 #endif
   call bounduvw(cbcvel,n,nh_v,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,u,v,w)
   call boundp(cbcpre,n,nh_p,halo,bcpre,nb,is_bound,dl,dzc,p)
@@ -886,13 +871,13 @@ allocate(duconv(n(1),n(2),n(3)), &
         end if
 #else
         if(is_forced(1).or.abs(bforce(1)).gt.0._rp) then
-          call bulk_mean_ibm(n,dl,dzf,psi_u,u,meanvelu)
+          call bulk_vel(n,nh_v,dl,dzf,l,psi_u,u,meanvelu,meanpsiu)
         endif
         if(is_forced(2).or.abs(bforce(2)).gt.0._rp) then
-          call bulk_mean_ibm(n,dl,dzf,psi_v,v,meanvelv)
+          call bulk_vel(n,nh_v,dl,dzf,l,psi_v,v,meanvelv,meanpsiv)
         endif
         if(is_forced(3).or.abs(bforce(3)).gt.0._rp) then
-          call bulk_mean_ibm(n,dl,dzc,psi_w,w,meanvelw)
+          call bulk_vel(n,nh_v,dl,dzc,l,psi_w,w,meanvelw,meanpsiw)
         endif
 #endif
         if(.not.any(is_forced(:))) dpdl(:) = -bforce(:) ! constant pressure gradient

@@ -85,7 +85,7 @@ real(rp), protected               :: solid_height_ratio
 real(rp), protected               :: Rotation_angle
 real(rp), protected               :: sx, sy, sz, depth, rod
 character(len=15), protected      :: surface_type
-logical, protected                :: height_map
+logical, protected                :: height_map,force_fluid_only
 !
 #if defined(_OPENACC)
 !
@@ -143,6 +143,7 @@ contains
     ! load immersed boundary method input files
     !
 #if defined(_IBM)
+    force_fluid_only = .false.
     open(newunit=iunit,file='ibm.in',status='old',action='read',iostat=ierr)
       if( ierr == 0 ) then
         read(iunit,*,iostat=ierr) surface_type
@@ -151,6 +152,7 @@ contains
         read(iunit,*,iostat=ierr) sx, sy, sz
         read(iunit,*,iostat=ierr) rod
         read(iunit,*,iostat=ierr) depth
+        read(iunit,*,iostat=ierr) force_fluid_only
       else
         if(myid == 0) print*, 'Error reading IBM input file' 
         if(myid == 0) print*, 'Aborting...'

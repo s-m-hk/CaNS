@@ -65,7 +65,7 @@ module mod_output
     integer , intent(in) :: idir
     real(rp), intent(in), dimension(3) :: l,dl
     real(rp), intent(in), dimension(0:       ) :: z_g
-    real(rp), intent(in), dimension(0:lo(3)-1) :: dz
+    real(rp), intent(in), dimension(lo(3)-1:) :: dz
     real(rp), intent(in), dimension(lo(1)-1:,lo(2)-1:,lo(3)-1:) :: p
     real(rp), allocatable, dimension(:) :: p1d
     integer :: i,j,k
@@ -339,7 +339,8 @@ module mod_output
     integer , intent(in), dimension(3) :: ng,lo,hi
     integer , intent(in) :: idir
     real(rp), intent(in), dimension(3) :: l,dl
-    real(rp), intent(in), dimension(0:) :: z_g,dz
+    real(rp), intent(in), dimension(0:) :: z_g
+    real(rp), intent(in), dimension(lo(3)-1:) :: dz
     real(rp), intent(in), dimension(lo(1)-1:,lo(2)-1:,lo(3)-1:) :: u,v,w,p
     real(rp), intent(in), dimension(lo(1)-1:,lo(2)-1:,lo(3)-1:), optional :: psi
     real(rp), allocatable, dimension(:) :: um,vm,wm,pm,u2,v2,w2,p2,uw
@@ -453,15 +454,19 @@ module mod_output
       p2(:) = p2(:)*grid_area_ratio - pm(:)**2
       uw(:) = uw(:)*grid_area_ratio - um(:)*wm(:)
 #if defined(_IBM)
-      uf(:)   = uf(:)/mean_psif
-      vf(:)   = vf(:)/mean_psif
-      wf(:)   = wf(:)/mean_psif
-      pf(:)   = pf(:)/mean_psif
-      uf2(:)  = uf2(:)/mean_psif - uf(:)**2
-      vf2(:)  = vf2(:)/mean_psif - vf(:)**2
-      wf2(:)  = wf2(:)/mean_psif - wf(:)**2
-      pf2(:)  = pf2(:)/mean_psif - pf(:)**2
-      ufwf(:) = ufwf(:)/mean_psif - uf(:)*wf(:)
+      do k=1,ng(3)
+       if (mean_psif(k)/=0.0_rp) then
+        uf(k)   = uf(k)/mean_psif(k)
+        vf(k)   = vf(k)/mean_psif(k)
+        wf(k)   = wf(k)/mean_psif(k)
+        pf(k)   = pf(k)/mean_psif(k)
+        uf2(k)  = uf2(k)/mean_psif(k) - uf(k)**2
+        vf2(k)  = vf2(k)/mean_psif(k) - vf(k)**2
+        wf2(k)  = wf2(k)/mean_psif(k) - wf(k)**2
+        pf2(k)  = pf2(k)/mean_psif(k) - pf(k)**2
+        ufwf(k) = ufwf(k)/mean_psif(k) - uf(k)*wf(k)
+       end if
+      end do
 #endif
 #if defined(_IBM)
       ! Dispersive velocities and stresses
@@ -548,7 +553,8 @@ module mod_output
     integer , intent(in), dimension(3)  :: ng,lo,hi
     integer , intent(in) :: idir
     real(rp), intent(in), dimension(3) :: l,dl
-    real(rp), intent(in), dimension(0:) :: z_g,dz
+    real(rp), intent(in), dimension(0:) :: z_g
+    real(rp), intent(in), dimension(lo(3)-1:) :: dz
     real(rp), intent(in), dimension(lo(1)-1:,lo(2)-1:,lo(3)-1:) :: u,v,w,s
     real(rp), intent(in), dimension(lo(1)-1:,lo(2)-1:,lo(3)-1:), optional :: psi
     real(rp), allocatable, dimension(:) :: um,vm,wm,sm,s2,us,vs,ws
@@ -662,16 +668,22 @@ module mod_output
     vs(:) = vs(:)*grid_area_ratio - vm(:)*sm(:)
     ws(:) = ws(:)*grid_area_ratio - wm(:)*sm(:)
 #if defined(_IBM)
-    uf(:)    = uf(:)/mean_psif
-    vf(:)    = vf(:)/mean_psif
-    wf(:)    = wf(:)/mean_psif
-    sf(:)    = sf(:)/mean_psif  
-    sf2(:)   = sf2(:)/mean_psif  - sf(:)**2
-    ufsf(:)  = ufsf(:)/mean_psif - uf(:)*sf(:)
-    vfsf(:)  = vfsf(:)/mean_psif - vf(:)*sf(:)
-    wfsf(:)  = wfsf(:)/mean_psif - wf(:)*sf(:)
-    ssol(:)  = ssol(:)/mean_psis  
-    ssol2(:) = ssol2(:)/mean_psis - ssol(:)**2
+    do k=1,ng(3)
+     if (mean_psif(k)/=0.0_rp) then
+      uf(k)    = uf(k)/mean_psif(k)
+      vf(k)    = vf(k)/mean_psif(k)
+      wf(k)    = wf(k)/mean_psif(k)
+      sf(k)    = sf(k)/mean_psif(k)  
+      sf2(k)   = sf2(k)/mean_psif(k)  - sf(k)**2
+      ufsf(k)  = ufsf(k)/mean_psif(k) - uf(k)*sf(k)
+      vfsf(k)  = vfsf(k)/mean_psif(k) - vf(k)*sf(k)
+      wfsf(k)  = wfsf(k)/mean_psif(k) - wf(k)*sf(k)
+     end if
+     if (mean_psis(k)/=0.0_rp) then
+      ssol(k)  = ssol(k)/mean_psis(k)  
+      ssol2(k) = ssol2(k)/mean_psis(k) - ssol(k)**2
+     end if
+    end do
 #endif
 #if defined(_IBM)
     ! Dispersive components

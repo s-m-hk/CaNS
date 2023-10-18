@@ -136,11 +136,11 @@ nx = n(1)
 ny = n(2)
 nz = n(3)
 !
-cell_u_tag(1:nx,1:ny,1:nz)    = 0.0_rp
-cell_v_tag(1:nx,1:ny,1:nz)    = 0.0_rp
-cell_w_tag(1:nx,1:ny,1:nz)    = 0.0_rp
-cell_phi_tag(1:nx,1:ny,1:nz)  = 0.0_rp
-Level_set(1:nx,1:ny,1:nz)     = 0
+cell_u_tag(:,:,:)    = 0.0_rp
+cell_v_tag(:,:,:)    = 0.0_rp
+cell_w_tag(:,:,:)    = 0.0_rp
+cell_phi_tag(:,:,:)  = 0.0_rp
+Level_set(:,:,:)     = 0
 !
 inquire(file=trim(datadir)//'IBM.bin',exist=is_data)
 

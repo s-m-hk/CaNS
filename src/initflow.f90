@@ -18,7 +18,7 @@ module mod_initflow
          add_noise
   contains
   subroutine initflow(inivel,bcvel,ng,lo,l,dl,zc,zf,dzc,dzf,visc, &
-                      is_forced,velf,bforce,is_wallturb,u,v,w,p,tg0)
+                      is_forced,velf,bforce,is_wallturb,u,v,w,p)
     !
     ! computes initial conditions for the velocity field
     !
@@ -33,7 +33,6 @@ module mod_initflow
     real(rp), intent(in), dimension(3)  :: velf,bforce
     logical , intent(in)                :: is_wallturb
     real(rp), dimension(0:,0:,0:), intent(out) :: u,v,w,p
-    real(rp), intent(in), optional :: tg0
     real(rp), allocatable, dimension(:) :: u1d
     !real(rp), allocatable, dimension(:,:) :: u2d
     integer :: i,j,k
@@ -240,7 +239,7 @@ module mod_initflow
   end subroutine initflow
   !
 #if defined(_HEAT_TRANSFER)
-  subroutine inittmp(initmp,nh_s,zc,lz,ng,u,tmp)
+  subroutine inittmp(initmp,nh_s,zc,lz,ng,u,tmp,tg0)
     !
     ! computes initial conditions for the temperature field
     !
@@ -253,6 +252,7 @@ module mod_initflow
     integer         , intent(in), dimension(3)                        :: ng
     real(rp)        , intent(in), dimension(0:,0:,0:)                 :: u
     real(rp)        , intent(out), dimension(1-nh_s:,1-nh_s:,1-nh_s:) :: tmp
+    real(rp)        , intent(in)                                      :: tg0
     real(rp)                                                          :: z, uc
     integer, dimension(3) :: n
     integer :: i,j,k

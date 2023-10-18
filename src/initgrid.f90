@@ -22,8 +22,9 @@ module mod_initgrid
                           CLUSTER_ONE_END_R            = 3, &
                           CLUSTER_MIDDLE               = 4
     integer , intent(in ) :: gtype,n
-    real(rp), intent(in ) :: gr,lz
+    real(rp), intent(in ) :: gr
     real(rp), intent(out), dimension(0:n+1) :: dzc,dzf,zc,zf
+    real(rp), intent(inout) :: lz
     real(rp) :: z0
     integer :: k
     logical :: read_z

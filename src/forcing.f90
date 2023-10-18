@@ -5,7 +5,7 @@ module mod_forcing
   use mod_common_mpi, only: ierr
   implicit none
   private
-  public ib_force,force_vel,force_scal,force_bulk_vel,bulk_mean_ibm
+  public ib_force,force_vel,force_scal,bulk_vel
   contains
   subroutine ib_force(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fx,fy,fz,fibm)
     !
@@ -71,33 +71,91 @@ module mod_forcing
     fibm(3) = fztot/(l(1)*l(2)*l(3))
   end subroutine ib_force
   !
-  subroutine force_vel(n,u,v,w,fx,fy,fz)
+  subroutine bulk_vel(n,nh,dl,dz,l,psi,p,mean_val,mean_psi)
     !
-    ! Force velocity field using volume-penalization IBM:
-    ! the force is proportional to the volume fraction of
+    ! bulk velocity forcing only in a region of the domain
+    ! where psi is non-zero
     !
     implicit none
     integer , intent(in   ), dimension(3) :: n
-    real(rp), intent(inout), dimension(0:,0:,0:) :: u,v,w
-    real(rp), intent(in   ), dimension(0:,0:,0:) :: fx,fy,fz
+    integer , intent(in   ) :: nh
+    real(rp), intent(in   ) , dimension(3) :: dl,l
+    real(rp), intent(in   ) , dimension(0:) :: dz
+    real(rp), intent(in   ), dimension(0:,0:,0:) :: psi
+    real(rp), intent(inout), dimension(1-nh:,1-nh:,1-nh:) :: p
+    real(rp), intent(out  ) :: mean_val,mean_psi
     integer :: i,j,k,nx,ny,nz
+    real(rp) :: psif,dx,dy
     !
     nx = n(1)
     ny = n(2)
     nz = n(3)
-    !$acc parallel loop collapse(3) default(present) async(1)
+    dx = dl(1)
+    dy = dl(2)
+    mean_val = 0.0_rp
+    mean_psi = 0.0_rp
+    !
+    !$acc data copy(mean_val,mean_psi) async(1)
+    !$acc parallel loop collapse(3) default(present) private(psif) reduction(+:mean_val) reduction(+:mean_psi) async(1)
     !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP SHARED(n,u,v,w,fx,fy,fz) &
-    !$OMP PRIVATE(i,j,k)
+    !$OMP SHARED(n,psi,p,dl,dz) &
+    !$OMP PRIVATE(i,j,k,psif) &
+    !$OMP REDUCTION(+:mean_val,mean_psi)
     do k=1,nz
       do j=1,ny
         do i=1,nx
-          u(i,j,k) = u(i,j,k) + fx(i,j,k)
-          v(i,j,k) = v(i,j,k) + fy(i,j,k)
-          w(i,j,k) = w(i,j,k) + fz(i,j,k)
+          psif = 1.0_rp - psi(i,j,k)
+          mean_val = mean_val + p(i,j,k)*psif*dx*dy*dz(k)
+          mean_psi = mean_psi + psif*dx*dy*dz(k)
         enddo
       enddo
     enddo
+    !$acc end data
+    !$acc wait(1)
+    call mpi_allreduce(MPI_IN_PLACE,mean_val,1,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call mpi_allreduce(MPI_IN_PLACE,mean_psi,1,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    mean_val = mean_val/mean_psi
+  end subroutine bulk_vel
+  !
+  subroutine force_vel(n,nh,dl,dz,l,psi,p,velf,mean_psi,mean_val,f)  ! (if bulk velocity is forced only inside the fluid)
+    !
+    ! bulk velocity forcing only in a region of the domain
+    ! where psi is non-zero
+    !
+    implicit none
+    integer , intent(in   ), dimension(3) :: n
+    integer , intent(in   ) :: nh
+    real(rp), intent(in   ) , dimension(3) :: dl,l
+    real(rp), intent(in   ) , dimension(0:) :: dz
+    real(rp), intent(in   ), dimension(0:,0:,0:) :: psi
+    real(rp), intent(inout), dimension(1-nh:,1-nh:,1-nh:) :: p
+    real(rp), intent(in   ) :: velf,mean_psi,mean_val
+    real(rp), intent(inout) :: f
+    integer :: i,j,k,nx,ny,nz
+    real(rp) :: psif,dx,dy
+    !
+    nx = n(1)
+    ny = n(2)
+    nz = n(3)
+    dx = dl(1)
+    dy = dl(2)
+    !
+    !$acc parallel loop collapse(3) default(present) private(psif) async(1)
+    !$OMP PARALLEL DO DEFAULT(none) &
+    !$OMP SHARED(n,psi,p,mean_val,velf,dl,dz) &
+    !$OMP PRIVATE(i,j,k,psif) &
+    !$OMP REDUCTION(+:f)
+    do k=1,nz
+      do j=1,ny
+        do i=1,nx
+          psif = 1.0_rp - psi(i,j,k)
+          f = f + (velf-mean_val)*psif*dx*dy*dz(k)
+        enddo
+      enddo
+    enddo
+    !$acc wait(1)
+    call mpi_allreduce(MPI_IN_PLACE,f,1,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
+    f = f/mean_psi
   end subroutine force_vel
   !
   subroutine force_scal(n,nh_s,dl,dz,l,psi,s,fibm)
@@ -129,7 +187,7 @@ module mod_forcing
       do j=1,ny
         do i=1,nx
           psis  = psi(i,j,k)
-          fs    = - s(i,j,k)*psis
+          fs    = -s(i,j,k)*psis
           s(i,j,k) = s(i,j,k) + fs
           fstot = fstot + fs*dx*dy*dz(k)
         enddo
@@ -140,120 +198,5 @@ module mod_forcing
     call MPI_ALLREDUCE(MPI_IN_PLACE,fstot,1,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
     fibm(4) = fstot/(l(1)*l(2)*l(3))
   end subroutine force_scal
-  !
-  subroutine force_bulk_vel(n,nh,dl,dz,l,psi,p,velf,f)
-    !
-    ! bulk velocity forcing only in a region of the domain
-    ! where psi is non-zero
-    !
-    implicit none
-    integer , intent(in   ), dimension(3) :: n
-    integer , intent(in   ) :: nh
-    real(rp), intent(in   ) , dimension(3) :: dl,l
-    real(rp), intent(in   ) , dimension(0:) :: dz
-    real(rp), intent(in   ), dimension(0:,0:,0:) :: psi
-    real(rp), intent(inout), dimension(1-nh:,1-nh:,1-nh:) :: p
-    real(rp), intent(in   ) :: velf
-    real(rp), intent(inout  ) :: f
-    integer :: i,j,k,nx,ny,nz
-    real(rp) :: psif,mean_val,mean_psi,dx,dy
-    !
-    nx = n(1)
-    ny = n(2)
-    nz = n(3)
-    dx = dl(1)
-    dy = dl(2)
-    mean_val = 0.0_rp
-    mean_psi = 0.0_rp
-    !
-    !$acc data copy(mean_val,mean_psi) async(1)
-    !$acc parallel loop collapse(3) default(present) private(psif) reduction(+:mean_val) reduction(+:mean_psi) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP SHARED(n,psi,p,dl,dz) &
-    !$OMP PRIVATE(i,j,k,psif) &
-    !$OMP REDUCTION(+:mean_val,mean_psi)
-    do k=1,nz
-      do j=1,ny
-        do i=1,nx
-          psif = 1.0_rp - psi(i,j,k)
-          mean_val = mean_val + p(i,j,k)*psif*dx*dy*dz(k)
-          mean_psi = mean_psi + psif*dx*dy*dz(k)
-        enddo
-      enddo
-    enddo
-    !$acc end data
-    !$acc wait(1)
-    call mpi_allreduce(MPI_IN_PLACE,mean_val,1,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    call mpi_allreduce(MPI_IN_PLACE,mean_psi,1,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    mean_val = mean_val/mean_psi
-    !$acc parallel loop collapse(3) default(present) private(psif) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP SHARED(n,psi,p,mean_val,velf,dl,dz) &
-    !$OMP PRIVATE(i,j,k,psif) &
-    !$OMP REDUCTION(+:f)
-    do k=1,nz
-      do j=1,ny
-        do i=1,nx
-#if defined(_FORCE_FLUID_ONLY)
-          psif = 1.0_rp - psi(i,j,k) ! (if bulk velocity forced only inside the fluid)
-#else
-          psif = 1.0_rp
-#endif
-          ! p(i,j,k) = p(i,j,k) + (velf-mean_val)*psif
-          f = f + (velf-mean_val)*psif*dx*dy*dz(k)
-        enddo
-      enddo
-    enddo
-    !$acc wait(1)
-    call mpi_allreduce(MPI_IN_PLACE,f,1,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-#if defined(_FORCE_FLUID_ONLY)
-    f = f/mean_psi ! (if bulk velocity forced only inside the fluid)
-#else
-    f = f/(l(1)*l(2)*l(3))
-#endif
-  end subroutine force_bulk_vel
-  !
-  subroutine bulk_mean_ibm(n,dl,dz,psi,p,mean)
-    !
-    implicit none
-    integer , intent(in   ), dimension(3) :: n
-    real(rp), intent(in   ) , dimension(3) :: dl
-    real(rp), intent(in   ) , dimension(0:) :: dz
-    real(rp), intent(in   ), dimension(0:,0:,0:) :: psi
-    real(rp), intent(inout), dimension(0:,0:,0:) :: p
-    real(rp), intent(out  ) :: mean
-    real(rp)              :: mean_val,mean_psi
-    integer :: i,j,k,nx,ny,nz
-    real(rp) :: psif,dx,dy
-    !
-    nx = n(1)
-    ny = n(2)
-    nz = n(3)
-    dx = dl(1)
-    dy = dl(2)
-    mean_val = 0.0_rp
-    mean_psi = 0.0_rp
-    !
-    !$acc data copy(mean_val,mean_psi) async(1)
-    !$acc parallel loop collapse(3) default(present) private(psif) reduction(+:mean_val) reduction(+:mean_psi) async(1)
-    !$OMP PARALLEL DO DEFAULT(none) &
-    !$OMP SHARED(n,psi,p,dl,dz) &
-    !$OMP PRIVATE(i,j,k,psif) &
-    !$OMP REDUCTION(+:mean_val,mean_psi)
-    do k=1,nz
-      do j=1,ny
-        do i=1,nx
-          psif = 1.0_rp - psi(i,j,k)
-          mean_val = mean_val + p(i,j,k)*psif*dx*dy*dz(k)
-          mean_psi = mean_psi + psif*dx*dy*dz(k)
-        enddo
-      enddo
-    enddo
-    !$acc end data
-    !$acc wait(1)
-    call mpi_allreduce(MPI_IN_PLACE,mean_val,1,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    call mpi_allreduce(MPI_IN_PLACE,mean_psi,1,MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    mean = mean_val/mean_psi
-  end subroutine bulk_mean_ibm
 end module mod_forcing
 #endif
