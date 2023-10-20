@@ -456,18 +456,16 @@ module mod_rk
     !
     ! Maintain a constant bulk temperature
     !
-#if !defined(_IBM)
     if(is_forced(4)) then
+#if !defined(_IBM)
      call bulk_mean(n,nh_s,grid_vol_ratio_f,s,mean)
      f(4) = tmpf - mean
-    end if
 #else
-    if(is_forced(4)) then
      call bulk_vel(n,nh_s,dl,dzc,l,psi_s,s,mean,vol_f)
      call force_vel(n,1,dl,dzf,l,psi_s,s,tmpf,vol_f,mean,f(4))
+#endif
      call scal_forcing(n,is_forced(4),f(4),s)
     endif
-#endif
 #if defined(_IBM) && defined(_VOLUME) && defined(_HEAT_TRANSFER) && defined(_ISOTHERMAL)
     !
     ! Volume penalization to impose isothermal conditions
@@ -581,7 +579,7 @@ module mod_rk
     !
     factor1 = rkpar(1)*dt
     factor2 = rkpar(2)*dt
-    factor12 = (factor1 + factor2)/2.
+    factor12 = (factor1 + factor2)/2.0_rp
     !
     taux(:) = 0._rp
     tauy(:) = 0._rp
