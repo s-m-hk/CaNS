@@ -81,11 +81,14 @@ real(rp), protected               :: tmpf
 real(rp), protected               :: tmp0,beta_th
 logical , protected               :: is_cmpt_wallflux
 #endif
+#if defined(_IBM)
+character(len=15), protected      :: surface_type
+logical, protected                :: height_map,force_fluid_only
 real(rp), protected               :: solid_height_ratio
 real(rp), protected               :: Rotation_angle
 real(rp), protected               :: sx, sy, sz, depth, rod
-character(len=15), protected      :: surface_type
-logical, protected                :: height_map,force_fluid_only
+real(rp), protected               :: start_time_avg
+#endif
 !
 #if defined(_OPENACC)
 !
@@ -153,6 +156,7 @@ contains
         read(iunit,*,iostat=ierr) rod
         read(iunit,*,iostat=ierr) depth
         read(iunit,*,iostat=ierr) force_fluid_only
+        read(iunit,*,iostat=ierr) start_time_avg
       else
         if(myid == 0) print*, 'Error reading IBM input file' 
         if(myid == 0) print*, 'Aborting...'
@@ -199,7 +203,11 @@ contains
     visc = uref*lref/rey
 #if defined(_HEAT_TRANSFER)
     alph_f = visc/Pr
+#if defined(_IBM)
     alph_s = dr*alph_f
+#else
+    alph_s = alph_f
+#endif
 #endif
     ng  = [itot,jtot,ktot]
     l   = [lx,ly,lz]
