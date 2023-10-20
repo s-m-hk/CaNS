@@ -138,8 +138,14 @@ module mod_initflow
       if(is_wallturb) then ! turbulent flow
         uref  = (bforce(1)*lref)**(0.5) ! utau = sqrt(-dpdx*h)
         retau = uref*lref/visc
-        reb   = (retau/.09)**(1./.88)
+        reb   = (retau/.09)**(1./.88)   ! Dean's correlation
         ubulk = reb*visc/(2*lref)
+        !
+        ! ubulk = 1.
+        ! retau = uref*lref/visc
+        ! reb   = (0.803 + 0.85*retau)**(1./2.)*retau**(3./2.) ! Correlation of Gatti et al. (doi:10.1017/jfm.2018.749)
+        ! uref  = retau/reb/(lref/2.)
+        ! bforce(1) = uref**2/lref
       else                 ! laminar flow
         ubulk = (bforce(1)*lref**2/(3.*visc))
       end if
