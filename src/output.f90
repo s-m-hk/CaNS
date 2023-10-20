@@ -289,7 +289,7 @@ module mod_output
     end if
   end subroutine write_log_output
   !
-  subroutine write_visu_3d(datadir,fname,fname_bin,fname_log,varname,nmin,nmax,nskip,time,istep,p)
+  subroutine write_visu_3d(datadir,fname,fname_bin,fname_log,varname,nmin,nmax,nskip,time,istep,p,dolog)
     !
     ! wraps the calls of out3d and write_log_output into the same subroutine
     !
@@ -299,9 +299,10 @@ module mod_output
     real(rp), intent(in)                  :: time
     integer , intent(in)                  :: istep
     real(rp), intent(in), dimension(:,:,:) :: p
+    logical , intent(in) :: dolog
     !
     call out3d(trim(datadir)//trim(fname),trim(datadir)//trim(fname_bin),trim(varname),nskip,p)
-    call write_log_output(trim(datadir)//trim(fname_log),trim(fname_bin),trim(varname),nmin,nmax,nskip,time,istep)
+    if(dolog) call write_log_output(trim(datadir)//trim(fname_log),trim(fname_bin),trim(varname),nmin,nmax,nskip,time,istep)
   end subroutine write_visu_3d
   !
   subroutine write_visu_2d(datadir,fname,fname_bin,fname_log,varname,inorm,nslice,ng,time,istep,p)
@@ -345,7 +346,6 @@ module mod_output
     real(rp), intent(in), dimension(lo(1)-1:,lo(2)-1:,lo(3)-1:), optional :: psi
     real(rp), allocatable, dimension(:) :: um,vm,wm,pm,u2,v2,w2,p2,uw
 #if defined(_IBM)
-    real(rp), allocatable, dimension(:) :: ud,vd,wd,pd,ud2,vd2,wd2,pd2,udwd
     real(rp), allocatable, dimension(:) :: uf,vf,wf,pf,uf2,vf2,wf2,pf2,ufwf
     real(rp), allocatable, dimension(:) :: mean_psif
 #endif
@@ -365,7 +365,6 @@ module mod_output
 #if defined(_IBM)
       dx = dl(1)
       dy = dl(2)
-      allocate(ud(0:q+1),vd(0:q+1),wd(0:q+1),pd(0:q+1),ud2(0:q+1),vd2(0:q+1),wd2(0:q+1),pd2(0:q+1),udwd(0:q+1))
       allocate(uf(0:q+1),vf(0:q+1),wf(0:q+1),pf(0:q+1),uf2(0:q+1),vf2(0:q+1),wf2(0:q+1),pf2(0:q+1),ufwf(0:q+1))
       allocate(mean_psif(0:q+1))
 #endif
@@ -469,63 +468,13 @@ module mod_output
       end do
 #endif
 #if defined(_IBM)
-      ! Dispersive velocities and stresses
-      ud(:)   = 0._rp
-      vd(:)   = 0._rp
-      wd(:)   = 0._rp
-      pd(:)   = 0._rp
-      ud2(:)  = 0._rp
-      vd2(:)  = 0._rp
-      wd2(:)  = 0._rp
-      pd2(:)  = 0._rp
-      udwd(:) = 0._rp
-      do k=lo(3),hi(3)
-        do j=lo(2),hi(2)
-          do i=lo(1),hi(1)
-            ud(k)   = ud(k)   + (u(i,j,k) - um(k))
-            vd(k)   = vd(k)   + (v(i,j,k) - vm(k))
-            wd(k)   = wd(k)   + (0.5_rp*(w(i,j,k-1) + w(i,j,k)) - wm(k))
-            pd(k)   = pd(k)   + (p(i,j,k) - pm(k))
-            ud2(k)  = ud2(k)  + (u(i,j,k) - um(k))**2
-            vd2(k)  = vd2(k)  + (v(i,j,k) - vm(k))**2
-            wd2(k)  = wd2(k)  + 0.5_rp*((w(i,j,k) - wm(k))**2+(w(i,j,k-1) - wm(k))**2)
-            pd2(k)  = pd2(k)  + (p(i,j,k) - pm(k))**2
-            udwd(k) = udwd(k) + 0.25_rp*((u(i-1,j,k) - um(k)) + (u(i,j,k) - um(k)))* &
-                                        ((w(i,j,k-1) - wm(k)) + (w(i,j,k) - wm(k)))
-          end do
-        end do
-      end do
-      call MPI_ALLREDUCE(MPI_IN_PLACE,ud(1)  ,ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-      call MPI_ALLREDUCE(MPI_IN_PLACE,vd(1)  ,ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-      call MPI_ALLREDUCE(MPI_IN_PLACE,wd(1)  ,ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-      call MPI_ALLREDUCE(MPI_IN_PLACE,pd(1)  ,ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-      call MPI_ALLREDUCE(MPI_IN_PLACE,ud2(1) ,ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-      call MPI_ALLREDUCE(MPI_IN_PLACE,vd2(1) ,ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-      call MPI_ALLREDUCE(MPI_IN_PLACE,wd2(1) ,ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-      call MPI_ALLREDUCE(MPI_IN_PLACE,pd2(1) ,ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-      call MPI_ALLREDUCE(MPI_IN_PLACE,udwd(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-      ud(:) = ud(:)*grid_area_ratio
-      vd(:) = vd(:)*grid_area_ratio
-      wd(:) = wd(:)*grid_area_ratio
-      pd(:) = pd(:)*grid_area_ratio
-      ud2(:) = ud2(:)*grid_area_ratio
-      vd2(:) = vd2(:)*grid_area_ratio
-      wd2(:) = wd2(:)*grid_area_ratio
-      pd2(:) = pd2(:)*grid_area_ratio
-      udwd(:) = udwd(:)*grid_area_ratio
-#endif
-      !
-#if defined(_IBM)
       if(myid == 0) then
         open(newunit=iunit,file=fname)
         do k=1,ng(3)
-          write(iunit,'(28E16.7e3)') z_g(k),um(k),vm(k),wm(k),pm(k), &
+          write(iunit,'(19E16.7e3)') z_g(k),um(k),vm(k),wm(k),pm(k), &
                                             u2(k),v2(k),w2(k),p2(k), &
                                             uw(k), &
-                                            ud(k) ,vd(k) ,wd(k) ,pd(k) , &
-                                            ud2(k),vd2(k),wd2(k),pd2(k), &
-                                            udwd(k), &
-                                            uf(k) ,vf(k) ,wf(k) ,pf(k) , &
+                                            uf(k),vf(k),wf(k),pf(k) , &
                                             uf2(k),vf2(k),wf2(k),pf2(k), &
                                             ufwf(k)
         end do
@@ -559,7 +508,6 @@ module mod_output
     real(rp), intent(in), dimension(lo(1)-1:,lo(2)-1:,lo(3)-1:), optional :: psi
     real(rp), allocatable, dimension(:) :: um,vm,wm,sm,s2,us,vs,ws
 #if defined(_IBM)
-    real(rp), allocatable, dimension(:) :: ud,vd,wd,sd,sd2,udsd,vdsd,wdsd
     real(rp), allocatable, dimension(:) :: uf,vf,wf,sf,sf2,ufsf,vfsf,wfsf
     real(rp), allocatable, dimension(:) :: ssol,ssol2
     real(rp), allocatable, dimension(:) :: mean_psif,mean_psis
@@ -578,7 +526,6 @@ module mod_output
 #if defined(_IBM)
     dx = dl(1)
     dy = dl(2)
-    allocate(ud(0:q+1),vd(0:q+1),wd(0:q+1),sd(0:q+1),sd2(0:q+1),udsd(0:q+1),vdsd(0:q+1),wdsd(0:q+1))
     allocate(uf(0:q+1),vf(0:q+1),wf(0:q+1),sf(0:q+1),sf2(0:q+1),ufsf(0:q+1),vfsf(0:q+1),wfsf(0:q+1))
     allocate(ssol(0:q+1),ssol2(0:q+1))
     allocate(mean_psif(0:q+1),mean_psis(0:q+1))
@@ -686,54 +633,11 @@ module mod_output
     end do
 #endif
 #if defined(_IBM)
-    ! Dispersive components
-    sd(k)   = 0.0_rp
-    sd2(k)  = 0.0_rp
-    ud(k)   = 0.0_rp
-    vd(k)   = 0.0_rp
-    wd(k)   = 0.0_rp
-    udsd(k) = 0.0_rp
-    vdsd(k) = 0.0_rp
-    wdsd(k) = 0.0_rp
-    do k=lo(3),hi(3)
-      do j=lo(2),hi(2)
-        do i=lo(1),hi(1)
-          sd(k)  = sd(k)  + (s(i,j,k) - sm(k))
-          sd2(k) = sd2(k) + (s(i,j,k) - sm(k))**2
-          ud(k)  = ud(k)  + (u(i,j,k) - um(k))
-          vd(k)  = vd(k)  + (v(i,j,k) - vm(k))
-          wd(k)  = wd(k)  + (0.5_rp*(w(i,j,k-1) + w(i,j,k)) - wm(k))
-          udsd(k) = udsd(k) + 0.5_rp*((u(i-1,j,k) - um(k)) + (u(i,j,k) - um(k)))*(s(i,j,k) - sm(k))
-          vdsd(k) = vdsd(k) + 0.5_rp*((v(i,j-1,k) - vm(k)) + (v(i,j,k) - vm(k)))*(s(i,j,k) - sm(k))
-          wdsd(k) = wdsd(k) + 0.5_rp*((w(i,j,k-1) - wm(k)) + (w(i,j,k) - wm(k)))*(s(i,j,k) - sm(k))
-        enddo
-      enddo
-    enddo
-    call MPI_ALLREDUCE(MPI_IN_PLACE,sd(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    call MPI_ALLREDUCE(MPI_IN_PLACE,ud(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    call MPI_ALLREDUCE(MPI_IN_PLACE,vd(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    call MPI_ALLREDUCE(MPI_IN_PLACE,wd(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    call MPI_ALLREDUCE(MPI_IN_PLACE,sd2(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    call MPI_ALLREDUCE(MPI_IN_PLACE,udsd(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    call MPI_ALLREDUCE(MPI_IN_PLACE,vdsd(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    call MPI_ALLREDUCE(MPI_IN_PLACE,wdsd(1),ng(3),MPI_REAL_RP,MPI_SUM,MPI_COMM_WORLD,ierr)
-    ud(:) = ud(:)*grid_area_ratio
-    vd(:) = vd(:)*grid_area_ratio
-    wd(:) = wd(:)*grid_area_ratio
-    sd(:) = sd(:)*grid_area_ratio  
-    sd2(:) = sd2(:)*grid_area_ratio
-    udsd(:) = udsd(:)*grid_area_ratio
-    vdsd(:) = vdsd(:)*grid_area_ratio
-    wdsd(:) = wdsd(:)*grid_area_ratio
-#endif
-#if defined(_IBM)
     if(myid == 0) then
        open(newunit=iunit,file=fname)
        do k=1,ng(3)
-         write(iunit,'(18E16.7e3)') z_g(k),sm(k),s2(k), &
+         write(iunit,'(13E16.7e3)') z_g(k),sm(k),s2(k), &
                                            us(k),vs(k),ws(k), &
-                                           sd(k),sd2(k), &
-                                           udsd(k),vdsd(k),wdsd(k), &
                                            sf(k),sf2(k), &
                                            ufsf(k),vfsf(k),wfsf(k), &
                                            ssol(k),ssol2(k)
