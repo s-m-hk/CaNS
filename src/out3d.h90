@@ -27,16 +27,16 @@
   !
   call write_visu_3d(datadir,'vex','vex_fld_'//fldnum//'.bin','log_visu_3d.out','Velocity_X', &
                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                     u(1:n(1),1:n(2),1:n(3)))
+                     u(1:n(1),1:n(2),1:n(3)),.true.)
   call write_visu_3d(datadir,'vey','vey_fld_'//fldnum//'.bin','log_visu_3d.out','Velocity_Y', &
                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                     v(1:n(1),1:n(2),1:n(3)))
+                     v(1:n(1),1:n(2),1:n(3)),.true.)
   call write_visu_3d(datadir,'vez','vez_fld_'//fldnum//'.bin','log_visu_3d.out','Velocity_Z', &
                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                     w(1:n(1),1:n(2),1:n(3)))
+                     w(1:n(1),1:n(2),1:n(3)),.true.)
   call write_visu_3d(datadir,'pre','pre_fld_'//fldnum//'.bin','log_visu_3d.out','Pressure_P', &
                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                     p(1:n(1),1:n(2),1:n(3)))
+                     p(1:n(1),1:n(2),1:n(3)),.true.)
 !  call write_visu_3d(datadir,'tmp','tmp_fld_'//fldnum//'.bin','log_visu_3d.out','Temperature_T', &
 !                     (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-!                     s(1:n(1),1:n(2),1:n(3)))
+!                     s(1:n(1),1:n(2),1:n(3)),.true.)

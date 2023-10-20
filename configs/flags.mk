@@ -41,7 +41,7 @@ ifeq ($(strip $(FCOMP)),INTEL)
 override FFLAGS += -O3 -xHost
 endif
 ifeq ($(strip $(FCOMP)),NVIDIA)
-override FFLAGS += -fast -O3
+override FFLAGS += -fast
 endif
 ifeq ($(strip $(FCOMP)),CRAY)
 override FFLAGS += -O3
@@ -58,7 +58,7 @@ ifeq ($(strip $(FCOMP)),INTEL)
 override FFLAGS += -fast -xHost
 endif
 ifeq ($(strip $(FCOMP)),NVIDIA)
-override FFLAGS += -fast -O3 -Mnouniform #-Mfprelaxed
+override FFLAGS += -fast -O3 -Mnouniform -Mfprelaxed -Mstack_arrays
 endif
 ifeq ($(strip $(FCOMP)),CRAY)
 override FFLAGS += -O3 -hfp3
@@ -89,7 +89,7 @@ endif
 ifeq ($(strip $(FCOMP)),NVIDIA)
 FFLAGS_MOD_DIR := #-module
 ifeq ($(strip $(GPU)),1)
-override FFLAGS += -acc -cuda -Minfo=accel -gpu=cuda12.0,cc86
+override FFLAGS += -acc -cuda -Minfo=accel -gpu=cuda12.0,ccall
 endif
 endif
 ifeq ($(strip $(FCOMP)),CRAY)
@@ -200,4 +200,7 @@ DEFINES += -D_ASYNC_HALO
 endif
 ifeq ($(strip $(HDF5)),1)
 DEFINES += -D_USE_HDF5
+endif
+ifeq ($(strip $(TIMEAVG)),1)
+DEFINES += -D_TIMEAVG
 endif

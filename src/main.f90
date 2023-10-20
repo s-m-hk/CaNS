@@ -81,8 +81,10 @@ program cans
                                  gtype,gr, &
                                  is_wallturb,is_forced,velf,bforce, &
                                  ng,l,dl,dli, &
-                                 read_input, &
-                                 height_map
+#if defined(_IBM)
+                                 height_map, start_time_avg, &
+#endif
+                                 read_input
   use mod_sanity         , only: test_sanity_input,test_sanity_solver
 #if !defined(_OPENACC)
   use mod_solver         , only: solver
@@ -99,7 +101,7 @@ program cans
 #endif
   use mod_timer          , only: timer_tic,timer_toc,timer_print
   use mod_updatep        , only: updatep
-  use mod_utils          , only: bulk_mean
+  use mod_utils          , only: bulk_mean,time_sum
   !@acc use mod_utils    , only: device_memory_footprint
   use mod_types
 #if defined(_IBM)
@@ -114,11 +116,15 @@ program cans
   implicit none
   integer , dimension(3) :: lo,hi,n,n_x_fft,n_y_fft,lo_z,hi_z,n_z
   real(rp), allocatable, dimension(:,:,:) :: u,v,w,p,pp
+#if defined(_TIMEAVG)
+  real(rp), allocatable, dimension(:,:,:) :: u_avg,v_avg,w_avg
+#endif
 #if defined(_HEAT_TRANSFER)
   real(rp), dimension(:,:,:)  , allocatable :: s
   real(rp), dimension(:,:,:)  , allocatable :: tmp
-#if defined(_IBM)
-  real(rp), dimension(:,:,:)  , allocatable :: al
+#if defined(_TIMEAVG)
+  real(rp), allocatable, dimension(:,:,:) :: s_avg
+  real(rp), allocatable, dimension(:,:,:) :: al
 #endif
 #endif
   real(rp), dimension(3) :: tauxo,tauyo,tauzo
@@ -182,7 +188,7 @@ program cans
   character(len=7  ) :: fldnum
   character(len=4  ) :: chkptnum
   character(len=100) :: filename
-  integer :: i,ii,iii,iiii,j,jj,k,kk
+  integer :: i,ii,iii,iiii,j,jj,k,kk,per
   logical :: is_done,kill
   integer :: rlen
 #if defined(_IBM)
@@ -194,6 +200,7 @@ program cans
   real(rp), dimension(:,:,:,:), allocatable :: WP1,WP2
   real(rp), dimension(:,:),     allocatable :: surf_z,surf_height
   real(rp), dimension(4) :: fibm,fibmtot
+  integer :: avgcounter
 #endif
 #if defined(_LPP)
   real(rp), dimension(:,:,:), allocatable :: duconv,dvconv,dwconv
@@ -212,6 +219,9 @@ program cans
   call initmpi(ng,dims,cbcpre,lo,hi,n,n_x_fft,n_y_fft,lo_z,hi_z,n_z,nb,is_bound)
   twi = MPI_WTIME()
   savecounter = 0
+#if defined(_IBM)
+  avgcounter = 0
+#endif
   !
   ! halo calculation
   !
@@ -237,10 +247,18 @@ program cans
            w( 0:n(1)+1,0:n(2)+1,0:n(3)+1), &
            p( 0:n(1)+1,0:n(2)+1,0:n(3)+1), &
            pp(0:n(1)+1,0:n(2)+1,0:n(3)+1))
+#if defined(_TIMEAVG)
+  allocate(u_avg(0:n(1)+1,0:n(2)+1,0:n(3)+1), &
+           v_avg(0:n(1)+1,0:n(2)+1,0:n(3)+1), &
+           w_avg(0:n(1)+1,0:n(2)+1,0:n(3)+1))
+#endif
 #if defined(_HEAT_TRANSFER)
   allocate(s(0:n(1)+1,0:n(2)+1,0:n(3)+1))
 #if defined(_IBM)
   allocate(al(0:n(1)+1,0:n(2)+1,0:n(3)+1))
+#endif
+#if defined(_TIMEAVG)
+  allocate(s_avg(0:n(1)+1,0:n(2)+1,0:n(3)+1))
 #endif
 #endif
   allocate(lambdaxyp(n_z(1),n_z(2)))
@@ -516,6 +534,16 @@ allocate(duconv(n(1),n(2),n(3)), &
   call initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,nh_p,halo,ng,nb,lo,hi,psi_u,psi_v,psi_w,psi, &
                0,zc,zf,zf_g,dzc,dzf,dl,dli)
 #endif
+#if defined(_TIMEAVG)
+  u_avg(1:n(1),1:n(2),1:n(3)) = 0.0_rp
+  v_avg(1:n(1),1:n(2),1:n(3)) = 0.0_rp
+  w_avg(1:n(1),1:n(2),1:n(3)) = 0.0_rp
+  !$acc enter data copyin(u_avg,v_avg,w_avg)
+#if defined(_HEAT_TRANSFER)
+  s_avg(1:n(1),1:n(2),1:n(3)) = 0.0_rp
+  !$acc enter data copyin(s_avg)
+#endif
+#endif
   !
   ! output solid volume fractions
   !
@@ -526,7 +554,6 @@ allocate(duconv(n(1),n(2),n(3)), &
   call out1d(trim(datadir)//'psi_w.out',ng,lo,hi,3,l,dl,zf_g,dzc,psi_w)
   if(myid == 0) print*, '*** IBM Initialized ***'
 #endif
-
   !$acc enter data copyin(u,v,w,p) create(pp)
 #if defined(_HEAT_TRANSFER)
   !$acc enter data copyin(s)
@@ -543,6 +570,28 @@ allocate(duconv(n(1),n(2),n(3)), &
        end do
      end do
    end do
+  !
+  ! Commented-out code varies the conductivity in the solid region along the x-dir
+  ! with a periodicity length equal defined 'per'
+  !
+   ! per = 16
+   ! do k=1,n(3)
+     ! do j=1,n(2)
+       ! iii = per + 1
+       ! iiii = 2.0*per
+       ! do i=1,n(1)
+        ! ii=(i+lo(1)-1)
+        ! if (mod(ii,iii) == 0) then
+         ! iii = iii + 1
+         ! if (psi(i,j,k) == 1.0_rp) al(i,j,k) = alph_s
+         ! if (mod(ii,iiii)== 0) then
+          ! iii = iii + per
+          ! iiii = iiii + 2.0*per
+         ! endif
+        ! endif
+       ! end do
+     ! end do
+   ! end do
   !$acc enter data copyin(al)
 #endif
 #if defined(_IBM)
@@ -553,12 +602,18 @@ allocate(duconv(n(1),n(2),n(3)), &
   call ib_force(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fx,fy,fz,fibm)
 #endif
   call bounduvw(cbcvel,n,nh_v,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,u,v,w)
+#if defined(_TIMEAVG)
+  call bounduvw(cbcvel,n,nh_v,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,u_avg,v_avg,w_avg)
+#endif
   call boundp(cbcpre,n,nh_p,halo,bcpre,nb,is_bound,dl,dzc,p)
 #if defined(_HEAT_TRANSFER)
 #if defined(_IBM) && defined(_SIMPLE)
   call boundp(cbcpre,n,nh_p,halo,bcpre,nb,is_bound,dl,dzc,al)
 #endif
   call boundp(cbctmp,n,nh_s,halo,bctmp,nb,is_bound,dl,dzc,s)
+#if defined(_TIMEAVG)
+  call boundp(cbctmp,n,nh_s,halo,bctmp,nb,is_bound,dl,dzc,s_avg)
+#endif
 #endif
   !
   ! post-process and write initial condition
@@ -572,40 +627,40 @@ allocate(duconv(n(1),n(2),n(3)), &
   include 'out2d.h90'
   call write_visu_3d(trim(datadir),'vex','vex_fld_'//fldnum//'.bin','log_visu_3d.out','Velocity_X', &
                     (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                    u(1:n(1),1:n(2),1:n(3)))
+                    u(1:n(1),1:n(2),1:n(3)),.true.)
   call write_visu_3d(trim(datadir),'vey','vey_fld_'//fldnum//'.bin','log_visu_3d.out','Velocity_Y', &
                     (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                    v(1:n(1),1:n(2),1:n(3)))
+                    v(1:n(1),1:n(2),1:n(3)),.true.)
   call write_visu_3d(trim(datadir),'vez','vez_fld_'//fldnum//'.bin','log_visu_3d.out','Velocity_Z', &
                     (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                    w(1:n(1),1:n(2),1:n(3)))
+                    w(1:n(1),1:n(2),1:n(3)),.true.)
   call write_visu_3d(trim(datadir),'pre','pre_fld_'//fldnum//'.bin','log_visu_3d.out','Pressure_P', &
                     (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                    p(1:n(1),1:n(2),1:n(3)))
+                    p(1:n(1),1:n(2),1:n(3)),.true.)
 #if defined(_HEAT_TRANSFER)
   call write_visu_3d(trim(datadir),'tmp','tmp_fld_'//fldnum//'.bin','log_visu_3d.out','Temperature_T', &
                     (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                    s(1:n(1),1:n(2),1:n(3)))
+                    s(1:n(1),1:n(2),1:n(3)),.true.)
 #endif
 #if defined(_IBM)
   !$acc update self(psi,psi_u,psi_v,psi_w)
   call write_visu_3d(trim(datadir),'psis','psis_fld_'//fldnum//'.bin','log_visu_3d.out','Solid_Psi_s', &
                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                     psi(1:n(1),1:n(2),1:n(3)))
+                     psi(1:n(1),1:n(2),1:n(3)),.false.)
   call write_visu_3d(trim(datadir),'psiu','psiu_fld_'//fldnum//'.bin','log_visu_3d.out','Solid_Psi_u', &
                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                     psi_u(1:n(1),1:n(2),1:n(3)))
+                     psi_u(1:n(1),1:n(2),1:n(3)),.false.)
   call write_visu_3d(trim(datadir),'psiv','psiv_fld_'//fldnum//'.bin','log_visu_3d.out','Solid_Psi_v', &
                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                     psi_v(1:n(1),1:n(2),1:n(3)))
+                     psi_v(1:n(1),1:n(2),1:n(3)),.false.)
   call write_visu_3d(trim(datadir),'psiw','psiw_fld_'//fldnum//'.bin','log_visu_3d.out','Solid_Psi_w', &
                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                     psi_w(1:n(1),1:n(2),1:n(3)))
+                     psi_w(1:n(1),1:n(2),1:n(3)),.false.)
 #if defined(_HEAT_TRANSFER)
   !$acc update self(al)
   call write_visu_3d(trim(datadir),'cond','cond_fld_'//fldnum//'.bin','log_visu_3d.out','Conductivity', &
                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                     al(1:n(1),1:n(2),1:n(3)))
+                     al(1:n(1),1:n(2),1:n(3)),.false.)
 #endif
 #endif
   !
@@ -660,17 +715,6 @@ allocate(duconv(n(1),n(2),n(3)), &
 #endif
 #endif
                    s,f,fluxo,flux)
-#if !defined(_IBM)
-      block
-        real(rp) :: ff
-        if(is_forced(4)) then
-          ff = f(4)
-          !$acc kernels default(present) async(1)
-          s(1:n(1),1:n(2),1:n(3)) = s(1:n(1),1:n(2),1:n(3)) + ff
-          !$acc end kernels
-        endif
-      end block
-#endif
       call boundp(cbctmp,n,nh_s,halo,bctmp,nb,is_bound,dl,dzc,s)
 #endif
       call rk(time_scheme,rkcoeff(:,irk),n,nh_v,nh_s,dli,l,zc,zf,dzci,dzfi,grid_vol_ratio_c,grid_vol_ratio_f,visc,dt,dto,p, &
@@ -835,7 +879,7 @@ allocate(duconv(n(1),n(2),n(3)), &
       ! end if
       dti = 1.0_rp/dt
       call chkdiv(lo,hi,dli,dzfi,u,v,w,divtot,divmax)
-      if(mod(istep,ioutput) == 0 .and. myid == 0) print*, 'Total divergence = ', divtot, '| Maximum divergence = ', divmax
+      if(mod(istep,ioutput) == 0 .and. myid == 0) print*, 'Total divergence = ', abs(divtot), '| Maximum divergence = ', divmax
 #if !defined(_MASK_DIVERGENCE_CHECK)
       if(divmax > small.or.is_nan(divtot)) then
         if(myid == 0) print*, 'ERROR: maximum divergence is too large.'
@@ -845,6 +889,19 @@ allocate(duconv(n(1),n(2),n(3)), &
       end if
 #endif
     end if
+    !
+    ! time averaging
+    !
+#if defined(_TIMEAVG)
+   if( (time >= start_time_avg).and.(mod(istep,iout1d) == 0)) then
+    call time_sum(n,nh_v,u,v,w,u_avg,v_avg,w_avg &
+#if defined(_HEAT_TRANSFER)
+                  ,s,s_avg &
+#endif
+                  )
+    avgcounter = avgcounter + 1
+   endif
+#endif
     !
     ! output routines below
     !
@@ -960,6 +1017,28 @@ allocate(duconv(n(1),n(2),n(3)), &
       end if
       if(myid == 0) print*, '*** Checkpoint saved at time = ', time, 'time step = ', istep, '. ***'
     end if
+#if defined(_TIMEAVG)
+    if(is_done.and..not.kill) then
+     call bounduvw(cbcvel,n,nh_v,halo,bcvel,nb,is_bound,.true.,dl,dzc,dzf,u_avg,v_avg,w_avg)
+     !$acc update self(u_avg,v_avg,w_avg)
+     call write_visu_3d(datadir,'u_mean','u_mean.bin','log_visu_3d.out','Velocity_X_mean', &
+                        (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
+                        u_avg(1:n(1),1:n(2),1:n(3))/avgcounter,.false.)
+     call write_visu_3d(datadir,'v_mean','v_mean.bin','log_visu_3d.out','Velocity_Y_mean', &
+                        (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
+                        v_avg(1:n(1),1:n(2),1:n(3))/avgcounter,.false.)
+     call write_visu_3d(datadir,'w_mean','w_mean.bin','log_visu_3d.out','Velocity_Z_mean', &
+                        (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
+                        w_avg(1:n(1),1:n(2),1:n(3))/avgcounter,.false.)
+#if defined(_HEAT_TRANSFER)
+     call boundp(cbctmp,n,nh_s,halo,bctmp,nb,is_bound,dl,dzc,s_avg)
+     !$acc update self(s_avg)
+     call write_visu_3d(datadir,'s_mean','s_mean.bin','log_visu_3d.out','Temperature_T_mean', &
+                        (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
+                        s_avg(1:n(1),1:n(2),1:n(3))/avgcounter,.false.)
+#endif
+    endif
+#endif
 #if defined(_TIMING)
       !$acc wait(1)
       dt12 = MPI_WTIME()-dt12

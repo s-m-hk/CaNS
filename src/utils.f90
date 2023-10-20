@@ -7,9 +7,45 @@
 module mod_utils
   implicit none
   private
-  public bulk_mean,f_sizeof,swap
+  public time_sum,bulk_mean,f_sizeof,swap
   !@acc public device_memory_footprint
 contains
+  subroutine time_sum(n,nh,u,v,w,u_avg,v_avg,w_avg &
+#if defined(_HEAT_TRANSFER)
+                      ,s,s_avg &
+#endif
+                      )
+    !
+    ! compute the mean value of an observable over the entire domain
+    !
+    use mod_types
+    implicit none
+    integer , intent(in), dimension(3) :: n
+    integer , intent(in)               :: nh
+    real(rp), intent(in   ), dimension(1-nh:,1-nh:,1-nh:) :: u,v,w
+    real(rp), intent(inout), dimension(1-nh:,1-nh:,1-nh:) :: u_avg,v_avg,w_avg
+#if defined(_HEAT_TRANSFER)
+    real(rp), intent(in   ), dimension(1-nh:,1-nh:,1-nh:) :: s
+    real(rp), intent(inout), dimension(1-nh:,1-nh:,1-nh:) :: s_avg
+#endif
+    integer :: i,j,k
+    integer :: ierr
+    !$acc parallel loop collapse(3) default(present) async(1)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)
+    do k=1,n(3)
+      do j=1,n(2)
+        do i=1,n(1)
+         u_avg(i,j,k) = u_avg(i,j,k) + u(i,j,k)
+         v_avg(i,j,k) = v_avg(i,j,k) + v(i,j,k)
+         w_avg(i,j,k) = w_avg(i,j,k) + w(i,j,k)
+#if defined(_HEAT_TRANSFER)
+         s_avg(i,j,k) = s_avg(i,j,k) + s(i,j,k)
+#endif
+        end do
+      end do
+    end do
+  end subroutine time_sum
+  !
   subroutine bulk_mean(n,nh,grid_vol_ratio,p,mean)
     !
     ! compute the mean value of an observable over the entire domain
@@ -31,7 +67,7 @@ contains
     do k=1,n(3)
       do j=1,n(2)
         do i=1,n(1)
-          mean = mean + p(i,j,k)*grid_vol_ratio(k)
+         mean = mean + p(i,j,k)*grid_vol_ratio(k)
         end do
       end do
     end do
