@@ -1,0 +1,55 @@
+!
+! parameter file for gen_xdmf.f90
+! Pedro Costa (p.simoes.costa@gmail.com)
+!
+character (len=10), parameter :: casename = 'DNS_solid'
+!
+! number and names of scalar fields;
+! the number of entries in array scalname *must*
+! be equal to nscal
+!
+integer, parameter :: nscal = 4
+character (len=4), parameter, dimension(nscal) :: scalname = (/'psis','psiu','psiv','psiw'/)
+!
+! number of grid points and domain dimensions
+!
+integer, parameter :: nx =  256, &
+                      ny =  256, &
+                      nz =  200
+real(4), parameter :: lx =  6.28318530717959, &
+                      ly =  3.14159265358979, &
+                      lz =  2.
+!
+! grid size and domain origin
+!
+real(4), parameter :: dx = lx/(1.*nx), &
+                      dy = ly/(1.*ny), &
+                      dz = lz/(1.*nz)
+real(4), parameter :: x0 = -lx/2.+dx/2.*1., &
+                      y0 = -ly/2.+dy/2.*1., &
+                      z0 = -lz/2.+dz/2.*1.
+!
+! initial time and time step
+!
+real(4), parameter :: t0 = 0.
+real(4), parameter :: dt = 1.0
+!
+! first field, last field and step size
+!
+integer, parameter :: fldstart = 0, &
+                      fldend   = 0, &
+                      nskip    = 1
+!
+! to compare time evolution of a scalar to a certain
+! fixed time instant: 
+! is_fldcmp = .true.
+! fldcmp    = #desired instant
+! (e.g. the deformation of an interface compared to its
+!  the initial condition)
+!
+logical, parameter :: is_fldcmp  = .false.
+integer, parameter :: fldcmp     = 0
+!
+! precision of input file (8 -- double; 4 -- single)
+!
+integer, parameter :: iprec = 4
