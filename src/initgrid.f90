@@ -45,9 +45,9 @@ module mod_initgrid
     !
     ! step 1) determine coordinates of cell faces zf
     !
-    zf(0) = 0.
+    zf(0) = 0.0_rp
     do k=1,n
-      z0  = (k-0.)/(1.*n)
+      z0  = (k-0.0_rp)/(1.0_rp*n)
 #if !defined(_GRIDPOINT_NATURAL_CHANNEL)
       call gridpoint(gr,z0,zf(k))
 #else
@@ -59,12 +59,12 @@ module mod_initgrid
     ! step 2) if coordinate file for zf exists, read them in
     !
     if(read_z)then
-      zf(:) = 0._rp
+      zf(:) = 0.0_rp
       open(unit=12,file='zf.dat',status='old',action='read')
       read(12,*) (zf(k), k=0,n)
       close(12)
       k=n+1
-      zf(k) = 2._rp*zf(k-1)-zf(k-2)
+      zf(k) = 2.0_rp*zf(k-1)-zf(k-2)
       lz = zf(n)-zf(0)
     if(myid == 0) print*, '*** Wall-normal coordinates read ***'
     endif
@@ -80,24 +80,24 @@ module mod_initgrid
     ! step 4) determine grid spacing between centers dzc
     !
     do k=0,n
-      dzc(k) = .5*(dzf(k)+dzf(k+1))
+      dzc(k) = 0.5_rp*(dzf(k)+dzf(k+1))
     end do
     dzc(n+1) = dzc(n)
     !
     ! step 5) compute coordinates of cell centers zc and faces zf
     !
     if(.not.read_z) then
-      zc(0) = -dzc(0)/2._rp
-      zf(0) = 0._rp
+      zc(0) = -dzc(0)/2.0_rp
+      zf(0) = 0.0_rp
      do k=1,n+1
       zc(k) = zc(k-1) + dzc(k-1)
       zf(k) = zf(k-1) + dzf(k)
      enddo
     else
      do k=1,n+1
-      zc(k) = .5_rp*(zf(k-1) + zf(k))
+      zc(k) = 0.5_rp*(zf(k-1) + zf(k))
      enddo
-      zc(0)=2._rp*zf(0)-zc(1)
+      zc(0)=2.0_rp*zf(0)-zc(1)
     endif
   end subroutine initgrid
   !

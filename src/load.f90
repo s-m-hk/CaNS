@@ -15,9 +15,9 @@ module mod_load
   implicit none
   private
 #if defined(_USE_HDF5)
-  public load_all,load_one,io_field,io_field_hdf5
+  public load_all,load_one,io_field,load_scalar,io_field_hdf5
 #else
-  public load_all,load_one,io_field
+  public load_all,load_one,io_field,load_scalar
 #endif
   contains
   subroutine load_all(io,filename,comm,ng,nh,lo,hi,time,istep,u,v,w,p)
@@ -471,6 +471,28 @@ module mod_load
     end select
   end subroutine load_one
   !
+  subroutine load_scalar(io,filename,avgcount)
+    !
+    implicit none
+    !
+    character(len=1), intent(in   ) :: io
+    character(len=*), intent(in   ) :: filename
+    integer         , intent(inout) :: avgcount
+    !
+    select case(io)
+    case('r')
+      open(88,file=filename,status='old',action='read')
+      read(88,*) avgcount
+      close(88)
+    case('w')
+      if(myid.eq.0) then
+        open (88, file=filename)
+        write(88,'(1I9.8)') avgcount
+        close(88)
+      endif
+    end select
+    !
+  end subroutine
 #if defined(_USE_HDF5)
   subroutine io_field_hdf5(io,filename,varname,ng,nh,lo,hi,var,meta,x_g,y_g,z_g)
     !

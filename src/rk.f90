@@ -291,7 +291,7 @@ module mod_rk
     !
     ! compute bulk velocity forcing
     !
-    call cmpt_bulk_forcing(n,l,dl,dzf,dzc,is_forced,velf,grid_vol_ratio_c,grid_vol_ratio_f,&
+    call cmpt_bulk_forcing(n,l,dl,dzf,dzc,zf,zc,is_forced,velf,grid_vol_ratio_c,grid_vol_ratio_f,&
 #if defined(_IBM)
                            psi_u,psi_v,psi_w,&
 #endif
@@ -461,7 +461,7 @@ module mod_rk
      call bulk_mean(n,nh_s,grid_vol_ratio_f,s,mean)
      f(4) = tmpf - mean
 #else
-     call bulk_vel(n,nh_s,dl,dzc,l,psi_s,s,mean,vol_f)
+     call bulk_vel(n,nh_s,dl,dzf,zc,l,psi_s,s,mean,vol_f)
      call force_vel(n,1,dl,dzf,l,psi_s,s,tmpf,vol_f,mean,f(4))
 #endif
      call scal_forcing(n,is_forced(4),f(4),s)
@@ -492,7 +492,7 @@ module mod_rk
 #endif
   end subroutine rk_scal
   !
-  subroutine cmpt_bulk_forcing(n,l,dl,dzf,dzc,is_forced,velf,grid_vol_ratio_c,grid_vol_ratio_f,&
+  subroutine cmpt_bulk_forcing(n,l,dl,dzf,dzc,zf,zc,is_forced,velf,grid_vol_ratio_c,grid_vol_ratio_f,&
 #if defined(_IBM)
                                psi_u,psi_v,psi_w,&
 #endif
@@ -501,7 +501,7 @@ module mod_rk
     implicit none
     integer , intent(in   ), dimension(3)  :: n
     real(rp), intent(in   ), dimension(3)  :: l,dl
-    real(rp), intent(in   ), dimension(0:) :: dzc,dzf
+    real(rp), intent(in   ), dimension(0:) :: dzc,dzf,zf,zc
     logical , intent(in   ), dimension(3)  :: is_forced
     real(rp), intent(in   ), dimension(3)  :: velf
     real(rp), intent(in   ), dimension(0:) :: grid_vol_ratio_c,grid_vol_ratio_f
@@ -530,7 +530,7 @@ module mod_rk
     end if
 #else
     if(is_forced(1)) then
-     call bulk_vel(n,1,dl,dzf,l,psi_u,u,mean,vol_f)
+     call bulk_vel(n,1,dl,dzf,zc,l,psi_u,u,mean,vol_f)
      if(force_fluid_only) then
       call force_vel(n,1,dl,dzf,l,psi_u,u,velf(1),vol_f,mean,f(1))
      else
@@ -538,7 +538,7 @@ module mod_rk
      endif
     endif
     if(is_forced(2)) then
-     call bulk_vel(n,1,dl,dzf,l,psi_v,v,mean,vol_f)
+     call bulk_vel(n,1,dl,dzf,zc,l,psi_v,v,mean,vol_f)
      if(force_fluid_only) then
       call force_vel(n,1,dl,dzf,l,psi_v,v,velf(2),vol_f,mean,f(2))
      else
@@ -546,7 +546,7 @@ module mod_rk
      endif
     endif
     if(is_forced(3)) then
-     call bulk_vel(n,1,dl,dzc,l,psi_w,w,mean,vol_f)
+     call bulk_vel(n,1,dl,dzc,zf,l,psi_w,w,mean,vol_f)
      if(force_fluid_only) then
       call force_vel(n,1,dl,dzc,l,psi_w,w,velf(3),vol_f,mean,f(3))
      else

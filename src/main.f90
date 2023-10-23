@@ -50,7 +50,7 @@ program cans
   use mod_initgrid       , only: initgrid
   use mod_initmpi        , only: initmpi
   use mod_initsolver     , only: initsolver
-  use mod_load           , only: load_all,load_one
+  use mod_load           , only: load_all,load_one,load_scalar
   use mod_mom            , only: bulk_forcing
   use mod_rk             , only: rk,rk_scal
   use mod_output         , only: out0d,gen_alias,out1d,out1d_chan, &
@@ -121,10 +121,11 @@ program cans
 #endif
 #if defined(_HEAT_TRANSFER)
   real(rp), dimension(:,:,:)  , allocatable :: s
-  real(rp), dimension(:,:,:)  , allocatable :: tmp
+#if defined(_IBM)
+  real(rp), dimension(:,:,:)  , allocatable :: al
+#endif
 #if defined(_TIMEAVG)
-  real(rp), allocatable, dimension(:,:,:) :: s_avg
-  real(rp), allocatable, dimension(:,:,:) :: al
+  real(rp), dimension(:,:,:)  , allocatable :: s_avg
 #endif
 #endif
   real(rp), dimension(3) :: tauxo,tauyo,tauzo
@@ -189,7 +190,7 @@ program cans
   character(len=4  ) :: chkptnum
   character(len=100) :: filename
   integer :: i,ii,iii,iiii,j,jj,k,kk,per
-  logical :: is_done,kill
+  logical :: is_data,is_done,kill
   integer :: rlen
 #if defined(_IBM)
   real(rp), dimension(:,:,:),   allocatable :: psi_u,psi_v,psi_w,psi
@@ -219,9 +220,6 @@ program cans
   call initmpi(ng,dims,cbcpre,lo,hi,n,n_x_fft,n_y_fft,lo_z,hi_z,n_z,nb,is_bound)
   twi = MPI_WTIME()
   savecounter = 0
-#if defined(_IBM)
-  avgcounter = 0
-#endif
   !
   ! halo calculation
   !
@@ -498,6 +496,9 @@ allocate(duconv(n(1),n(2),n(3)), &
   if(.not.restart) then
     istep = 0
     time = 0.0_rp
+#if defined(_TIMEAVG)
+    avgcounter = 0
+#endif
     !$acc update self(zc,dzc,dzf)
     call initflow(inivel,bcvel,ng,lo,l,dl,zc,zf,dzc,dzf,visc, &
                   is_forced(1),velf,bforce,is_wallturb,u,v,w,p)
@@ -506,10 +507,36 @@ allocate(duconv(n(1),n(2),n(3)), &
     if(myid == 0) print*, '*** Heat solver enabled ***'
 #endif
     if(myid == 0) print*, '*** Initial condition successfully set ***'
+#if defined(_TIMEAVG)
+    u_avg(1:n(1),1:n(2),1:n(3)) = 0.0_rp
+    v_avg(1:n(1),1:n(2),1:n(3)) = 0.0_rp
+    w_avg(1:n(1),1:n(2),1:n(3)) = 0.0_rp
+    !$acc enter data copyin(u_avg,v_avg,w_avg)
+#if defined(_HEAT_TRANSFER)
+    s_avg(1:n(1),1:n(2),1:n(3)) = 0.0_rp
+    !$acc enter data copyin(s_avg)
+#endif
+#endif
   else
     call load_all('r',trim(datadir)//'fld.bin',MPI_COMM_WORLD,ng,[nh_v,nh_v,nh_v],lo,hi,time,istep,u,v,w,p)
+#if defined(_TIMEAVG)
+    inquire(file=trim(datadir)//'u_avg.bin',exist=is_data)
+    if(is_data) call load_one('r',trim(datadir)//'u_avg.bin',MPI_COMM_WORLD,ng,[nh_v,nh_v,nh_v],lo,hi,time,istep,u_avg)
+    inquire(file=trim(datadir)//'v_avg.bin',exist=is_data)
+    if(is_data) call load_one('r',trim(datadir)//'v_avg.bin',MPI_COMM_WORLD,ng,[nh_v,nh_v,nh_v],lo,hi,time,istep,v_avg)
+    inquire(file=trim(datadir)//'w_avg.bin',exist=is_data)
+    if(is_data) call load_one('r',trim(datadir)//'w_avg.bin',MPI_COMM_WORLD,ng,[nh_v,nh_v,nh_v],lo,hi,time,istep,w_avg)
+    inquire(file=trim(datadir)//'counter.out',exist=is_data)
+    if(is_data) call load_scalar('r',trim(datadir)//'counter.out',avgcounter)
+    !$acc enter data copyin(u_avg,v_avg,w_avg)
+#endif
 #if defined(_HEAT_TRANSFER)
     call load_one('r',trim(datadir)//'tmp.bin',MPI_COMM_WORLD,ng,[nh_s,nh_s,nh_s],lo,hi,time,istep,s)
+#if defined(_TIMEAVG)
+    inquire(file=trim(datadir)//'s_avg.bin',exist=is_data)
+    if(is_data) call load_one('r',trim(datadir)//'s_avg.bin',MPI_COMM_WORLD,ng,[nh_s,nh_s,nh_s],lo,hi,time,istep,s_avg)
+    !$acc enter data copyin(s_avg)
+#endif
 #endif
     if(reset_time) then
      istep = 0
@@ -534,16 +561,6 @@ allocate(duconv(n(1),n(2),n(3)), &
   call initIBM(cbcvel,cbcpre,bcvel,bcpre,is_bound,n,nh_p,halo,ng,nb,lo,hi,psi_u,psi_v,psi_w,psi, &
                0,zc,zf,zf_g,dzc,dzf,dl,dli)
 #endif
-#if defined(_TIMEAVG)
-  u_avg(1:n(1),1:n(2),1:n(3)) = 0.0_rp
-  v_avg(1:n(1),1:n(2),1:n(3)) = 0.0_rp
-  w_avg(1:n(1),1:n(2),1:n(3)) = 0.0_rp
-  !$acc enter data copyin(u_avg,v_avg,w_avg)
-#if defined(_HEAT_TRANSFER)
-  s_avg(1:n(1),1:n(2),1:n(3)) = 0.0_rp
-  !$acc enter data copyin(s_avg)
-#endif
-#endif
   !
   ! output solid volume fractions
   !
@@ -562,36 +579,34 @@ allocate(duconv(n(1),n(2),n(3)), &
   !
   ! Set thermal diffusivity in fluid and solid regions
   !
-   al(1:n(1),1:n(2),1:n(3)) = alph_f
-   do k=1,n(3)
-     do j=1,n(2)
-       do i=1,n(1)
-         if (psi(i,j,k) == 1.0_rp) al(i,j,k) = alph_s
-       end do
-     end do
-   end do
+  al(1:n(1),1:n(2),1:n(3)) = alph_f
   !
-  ! Commented-out code varies the conductivity in the solid region along the x-dir
-  ! with a periodicity length equal defined 'per'
+  do k=1,n(3)
+    do j=1,n(2)
+      do i=1,n(1)
+        if (psi(i,j,k) == 1.0_rp) al(i,j,k) = alph_s
+      end do
+    end do
+  end do
   !
-   ! per = 16
-   ! do k=1,n(3)
-     ! do j=1,n(2)
-       ! iii = per + 1
-       ! iiii = 2.0*per
-       ! do i=1,n(1)
-        ! ii=(i+lo(1)-1)
-        ! if (mod(ii,iii) == 0) then
-         ! iii = iii + 1
-         ! if (psi(i,j,k) == 1.0_rp) al(i,j,k) = alph_s
-         ! if (mod(ii,iiii)== 0) then
-          ! iii = iii + per
-          ! iiii = iiii + 2.0*per
-         ! endif
+  ! per = 16
+  ! do k=1,n(3)
+    ! do j=1,n(2)
+      ! iii = per + 1
+      ! iiii = 2.0_rp*per
+      ! do i=1,n(1)
+       ! ii=(i+lo(1)-1)
+       ! if (mod(ii,iii) == 0) then
+        ! iii = iii + 1
+        ! if (psi(i,j,k) == 1.0_rp) al(i,j,k) = alph_s
+        ! if (mod(ii,iiii)== 0) then
+         ! iii = iii + per
+         ! iiii = iiii + 2.0_rp*per
         ! endif
-       ! end do
-     ! end do
-   ! end do
+       ! endif
+      ! end do
+    ! end do
+  ! end do
   !$acc enter data copyin(al)
 #endif
 #if defined(_IBM)
@@ -928,13 +943,13 @@ allocate(duconv(n(1),n(2),n(3)), &
         end if
 #else
         if(is_forced(1).or.abs(bforce(1)).gt.0._rp) then
-          call bulk_vel(n,nh_v,dl,dzf,l,psi_u,u,meanvelu,meanpsiu)
+          call bulk_vel(n,nh_v,dl,dzf,zc,l,psi_u,u,meanvelu,meanpsiu)
         endif
         if(is_forced(2).or.abs(bforce(2)).gt.0._rp) then
-          call bulk_vel(n,nh_v,dl,dzf,l,psi_v,v,meanvelv,meanpsiv)
+          call bulk_vel(n,nh_v,dl,dzf,zc,l,psi_v,v,meanvelv,meanpsiv)
         endif
         if(is_forced(3).or.abs(bforce(3)).gt.0._rp) then
-          call bulk_vel(n,nh_v,dl,dzc,l,psi_w,w,meanvelw,meanpsiw)
+          call bulk_vel(n,nh_v,dl,dzc,zf,l,psi_w,w,meanvelw,meanpsiw)
         endif
 #endif
         if(.not.any(is_forced(:))) dpdl(:) = -bforce(:) ! constant pressure gradient
@@ -1030,13 +1045,18 @@ allocate(duconv(n(1),n(2),n(3)), &
      call write_visu_3d(datadir,'w_mean','w_mean.bin','log_visu_3d.out','Velocity_Z_mean', &
                         (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
                         w_avg(1:n(1),1:n(2),1:n(3))/avgcounter,.false.)
+     call load_one('w',trim(datadir)//'u_avg.bin',MPI_COMM_WORLD,ng,[nh_v,nh_v,nh_v],lo,hi,time,istep,u_avg)
+     call load_one('w',trim(datadir)//'v_avg.bin',MPI_COMM_WORLD,ng,[nh_v,nh_v,nh_v],lo,hi,time,istep,v_avg)
+     call load_one('w',trim(datadir)//'w_avg.bin',MPI_COMM_WORLD,ng,[nh_v,nh_v,nh_v],lo,hi,time,istep,w_avg)
 #if defined(_HEAT_TRANSFER)
      call boundp(cbctmp,n,nh_s,halo,bctmp,nb,is_bound,dl,dzc,s_avg)
      !$acc update self(s_avg)
      call write_visu_3d(datadir,'s_mean','s_mean.bin','log_visu_3d.out','Temperature_T_mean', &
                         (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
                         s_avg(1:n(1),1:n(2),1:n(3))/avgcounter,.false.)
+     call load_one('w',trim(datadir)//'s_avg.bin',MPI_COMM_WORLD,ng,[nh_s,nh_s,nh_s],lo,hi,time,istep,s_avg)
 #endif
+     call load_scalar('w',trim(datadir)//'counter.out',avgcounter)
     endif
 #endif
 #if defined(_TIMING)

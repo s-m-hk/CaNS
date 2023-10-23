@@ -71,7 +71,7 @@ module mod_forcing
     fibm(3) = fztot/(l(1)*l(2)*l(3))
   end subroutine ib_force
   !
-  subroutine bulk_vel(n,nh,dl,dz,l,psi,p,mean_val,mean_psi)
+  subroutine bulk_vel(n,nh,dl,dz,z,l,psi,p,mean_val,mean_psi)
     !
     ! bulk velocity forcing only in a region of the domain
     ! where psi is non-zero
@@ -80,7 +80,7 @@ module mod_forcing
     integer , intent(in   ), dimension(3) :: n
     integer , intent(in   ) :: nh
     real(rp), intent(in   ) , dimension(3) :: dl,l
-    real(rp), intent(in   ) , dimension(0:) :: dz
+    real(rp), intent(in   ) , dimension(0:) :: dz,z
     real(rp), intent(in   ), dimension(0:,0:,0:) :: psi
     real(rp), intent(inout), dimension(1-nh:,1-nh:,1-nh:) :: p
     real(rp), intent(out  ) :: mean_val,mean_psi
@@ -104,9 +104,11 @@ module mod_forcing
     do k=1,nz
       do j=1,ny
         do i=1,nx
+         ! if (z(k).ge.0.0_rp) then    ! [Target flow rate is based on the channel flow region (y > 0) only]
           psif = 1.0_rp - psi(i,j,k)
           mean_val = mean_val + p(i,j,k)*psif*dx*dy*dz(k)
           mean_psi = mean_psi + psif*dx*dy*dz(k)
+         ! endif
         enddo
       enddo
     enddo
@@ -161,13 +163,13 @@ module mod_forcing
   subroutine force_scal(n,nh_s,dl,dz,l,psi,s,fibm)
     !
     implicit none
-    integer , intent(in), dimension(3) :: n
-    integer , intent(in)               :: nh_s
-    real(rp), intent(in   ) , dimension(3) :: dl,l
-    real(rp), intent(in   ) , dimension(0:) :: dz
-    real(rp), intent(in   ) , dimension(0:,0:,0:) :: psi
-    real(rp), intent(inout) , dimension(1-nh_s:,1-nh_s:,1-nh_s:) :: s
-    real(rp), intent(inout  ), dimension(4) :: fibm
+    integer , intent(in), dimension(3)  :: n
+    integer , intent(in)                :: nh_s
+    real(rp), intent(in), dimension(3)  :: dl,l
+    real(rp), intent(in), dimension(0:) :: dz
+    real(rp), intent(in), dimension(0:,0:,0:) :: psi
+    real(rp), intent(inout), dimension(1-nh_s:,1-nh_s:,1-nh_s:) :: s
+    real(rp), intent(inout), dimension(4) :: fibm
     real(rp) :: psis,fs,fstot,dx,dy
     integer :: i,j,k,nx,ny,nz
     !

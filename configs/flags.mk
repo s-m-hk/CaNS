@@ -38,7 +38,7 @@ ifeq ($(strip $(FCOMP)),GNU)
 override FFLAGS += -O3
 endif
 ifeq ($(strip $(FCOMP)),INTEL)
-override FFLAGS += -O3 -xHost
+override FFLAGS += -O3 -align array64byte
 endif
 ifeq ($(strip $(FCOMP)),NVIDIA)
 override FFLAGS += -fast

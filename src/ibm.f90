@@ -42,7 +42,7 @@ if(trim(surface_type) == 'Lattice') then
     yyy = (j+lo(2)-1-0.5)*dy
     zzz = zf(k)
     ghost = lattice(xxx,yyy,zzz,zf_g,dzc,lx,ly,lz)
-    if (ghost) cell_phi_tag(i,j,k) = 1.0_rp
+    if(ghost) cell_phi_tag(i,j,k) = 1.0_rp
    enddo
   enddo
  enddo
@@ -57,7 +57,7 @@ elseif(trim(surface_type) == 'SolidWall') then
     yyy = (j+lo(2)-1-0.5)*dy
     zzz = zf(k)
     ghost = SolidWallBottom(xxx,yyy,zzz,zf_g,lx,ly,lz)
-    if (ghost) cell_phi_tag(i,j,k) = 1.0_rp
+    if(ghost) cell_phi_tag(i,j,k) = 1.0_rp
    enddo
   enddo
  enddo
@@ -82,8 +82,8 @@ elseif(trim(surface_type) == 'SolidWall') then
 #if !defined(_DECOMP_Z)
  endif
 #endif
-endif
 #endif
+endif
 end subroutine IBM_Mask
 #endif
 !
