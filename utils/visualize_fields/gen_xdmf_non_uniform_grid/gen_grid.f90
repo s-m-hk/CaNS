@@ -1,9 +1,3 @@
-! -
-!
-! SPDX-FileCopyrightText: Copyright (c) 2017-2022 Pedro Costa and the CaNS contributors. All rights reserved.
-! SPDX-License-Identifier: MIT
-!
-! -
 program gen_grid
 !
 ! this program generates a the grid files to be read by the xdmf file
@@ -12,10 +6,11 @@ program gen_grid
 ! Pedro Costa (p.simoes.costa@gmail.com)
 !
 implicit none
-include 'param.h90'
+include 'param_flow.h90'
 !
 integer :: iunit,i,j,k,lenr
-real(8), dimension(nz) :: dummy,zc
+real(iprec), dimension(nz) :: dummy,zc
+real(iprec), dimension(nz+1) :: zf
 !
 iunit = 99
 inquire (iolength=lenr) dummy(1)
@@ -40,4 +35,10 @@ close(iunit)
 open(iunit,file='z.bin',access='direct',recl=nz*lenr)
 write(iunit,rec=1) zc(1:nz)
 close(iunit)
+! open(99,file='zf.dat')
+! read(iunit,'(1E16.7e3)') zf(1:nz+1)
+! close(iunit)
+! open(iunit,file='z.bin',access='direct',recl=nz*lenr)
+! write(iunit,rec=1) (0.5*(zf(i)+zf(i+1)),i=1,nz)
+! close(iunit)
 end program gen_grid

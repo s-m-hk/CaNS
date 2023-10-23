@@ -58,7 +58,7 @@ ifeq ($(strip $(FCOMP)),INTEL)
 override FFLAGS += -fast -xHost
 endif
 ifeq ($(strip $(FCOMP)),NVIDIA)
-override FFLAGS += -fast -O3 -Mnouniform -Mfprelaxed -Mstack_arrays
+override FFLAGS += -fast -O3 -Mnouniform  -Mstack_arrays #-Mfprelaxed
 endif
 ifeq ($(strip $(FCOMP)),CRAY)
 override FFLAGS += -O3 -hfp3
