@@ -472,27 +472,25 @@ module mod_load
   end subroutine load_one
   !
   subroutine load_scalar(io,filename,avgcount)
-    !
     implicit none
-    !
     character(len=1), intent(in   ) :: io
     character(len=*), intent(in   ) :: filename
     integer         , intent(inout) :: avgcount
     !
     select case(io)
     case('r')
-      open(88,file=filename,status='old',action='read')
-      read(88,*) avgcount
-      close(88)
+     open(88,file=filename,status='old',action='read')
+     read(88,*) avgcount
+     close(88)
     case('w')
-      if(myid.eq.0) then
-        open (88, file=filename)
-        write(88,'(1I9.8)') avgcount
-        close(88)
-      endif
+     if(myid == 0) then
+      open(88,file=filename,status='replace',action='write')
+      write(88,'(1I9.8)') avgcount
+      close(88)
+     endif
     end select
-    !
-  end subroutine
+  end subroutine load_scalar
+  !
 #if defined(_USE_HDF5)
   subroutine io_field_hdf5(io,filename,varname,ng,nh,lo,hi,var,meta,x_g,y_g,z_g)
     !
@@ -501,7 +499,7 @@ module mod_load
     ! written with the help of Josh Romero,
     ! with the field data I/O inspired from the AFiD code
     !
-    use HDF5
+    use hdf5
     implicit none
     character(len=1), intent(in) :: io
     character(len=*), intent(in) :: filename,varname
@@ -541,7 +539,6 @@ module mod_load
     data_offset(:) = starts(:)
     halo_offset(:) = nh(:)
     !
-    call h5open_f(ierr)
     select case(io)
     case('r')
       call h5pcreate_f(H5P_FILE_ACCESS_F,plist_id,ierr)
@@ -633,7 +630,6 @@ module mod_load
         call h5fclose_f(file_id,ierr)
       end if
     end select
-    call h5close_f(ierr)
     !
   end subroutine io_field_hdf5
 #endif
