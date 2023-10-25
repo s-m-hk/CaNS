@@ -16,7 +16,6 @@ module mod_chkdt
   public chkdt
   contains
   subroutine chkdt(n,dl,dzci,dzfi,visc,u,v,w,dtmax)
-    !@cuf use cudafor
     !
     ! computes maximum allowed time-step
     !
