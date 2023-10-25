@@ -3,7 +3,7 @@ ifeq ($(strip $(FFLAGS_DEBUG)),1)
 ifeq ($(strip $(FCOMP)),GNU)
 override FFLAGS += -O0 -g -fbacktrace -Wall -Wextra -pedantic -fcheck=all -finit-real=snan -ffpe-trap=invalid -std=f2018
 endif
-ifeq ($(strip $(FCOMP)),INTEL)
+ifeq ($(strip $(FCOMP)),INTELOLD)
 override FFLAGS += -O0 -g -traceback -fpe0 #-stand f18
 endif
 ifeq ($(strip $(FCOMP)),NVIDIA)
@@ -20,7 +20,7 @@ ifeq ($(strip $(FFLAGS_DEBUG_MAX)),1)
 ifeq ($(strip $(FCOMP)),GNU)
 override FFLAGS += -O0 -g -fbacktrace -Wall -Wextra -Wimplicit-interface -Wno-unused-function -fPIC -fcheck=all -ffpe-trap=invalid,zero,overflow -finit-real=snan -finit-integer=-99999999 -std=f2018
 endif
-ifeq ($(strip $(FCOMP)),INTEL)
+ifeq ($(strip $(FCOMP)),INTELOLD)
 override FFLAGS += -O0 -warn all -g -traceback -fpe0 -stand f18
 endif
 ifeq ($(strip $(FCOMP)),NVIDIA)
@@ -37,8 +37,11 @@ ifeq ($(strip $(FFLAGS_OPT)),1)
 ifeq ($(strip $(FCOMP)),GNU)
 override FFLAGS += -O3
 endif
+ifeq ($(strip $(FCOMP)),INTELOLD)
+override FFLAGS += -O3 -xHost
+endif
 ifeq ($(strip $(FCOMP)),INTEL)
-override FFLAGS += -O3 -align array64byte
+override FFLAGS += -O3
 endif
 ifeq ($(strip $(FCOMP)),NVIDIA)
 override FFLAGS += -fast
@@ -54,11 +57,14 @@ ifeq ($(strip $(FFLAGS_OPT_MAX)),1)
 ifeq ($(strip $(FCOMP)),GNU)
 override FFLAGS += -Ofast -march=native
 endif
-ifeq ($(strip $(FCOMP)),INTEL)
+ifeq ($(strip $(FCOMP)),INTELOLD)
 override FFLAGS += -fast -xHost
 endif
+ifeq ($(strip $(FCOMP)),INTEL)
+override FFLAGS += -O3 -march=native
+endif
 ifeq ($(strip $(FCOMP)),NVIDIA)
-override FFLAGS += -fast -O3 -Mnouniform  -Mstack_arrays #-Mfprelaxed
+override FFLAGS += -fast -O3 -Mnouniform -Mstack_arrays #-Mfprelaxed
 endif
 ifeq ($(strip $(FCOMP)),CRAY)
 override FFLAGS += -O3 -hfp3
@@ -69,6 +75,8 @@ endif
 ifeq ($(strip $(OPENMP)),1)
 ifeq      ($(strip $(FCOMP)),GNU)
 override FFLAGS += -fopenmp
+else ifeq ($(strip $(FCOMP)),INTELOLD)
+override FFLAGS += -qopenmp
 else ifeq ($(strip $(FCOMP)),INTEL)
 override FFLAGS += -qopenmp
 else ifeq ($(strip $(FCOMP)),NVIDIA)
@@ -83,6 +91,9 @@ endif
 ifeq ($(strip $(FCOMP)),GNU)
 FFLAGS_MOD_DIR := -J
 endif
+ifeq ($(strip $(FCOMP)),INTELOLD)
+FFLAGS_MOD_DIR := -module
+endif
 ifeq ($(strip $(FCOMP)),INTEL)
 FFLAGS_MOD_DIR := -module
 endif
@@ -94,12 +105,6 @@ endif
 endif
 ifeq ($(strip $(FCOMP)),CRAY)
 FFLAGS_MOD_DIR := -J
-endif
-
-ifeq ($(strip $(FCOMP)),INTEL)
-ifeq ($(strip $(INTEL_IFX)),1)
-override FFLAGS += -fc=ifx
-endif
 endif
 
 ifeq ($(strip $(DEBUG)),1)

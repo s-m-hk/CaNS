@@ -2,8 +2,12 @@ FC = mpifort
 ifeq ($(strip $(FCOMP)),GNU)
 FC = mpifort
 endif
+ifeq ($(strip $(FCOMP)),INTELOLD)
+FC = mpiifort
+CPP = -fpp
+endif
 ifeq ($(strip $(FCOMP)),INTEL)
-FC = mpiifort #-fc=ifx
+FC = mpiifx
 CPP = -fpp
 endif
 ifeq ($(strip $(FCOMP)),NVIDIA)

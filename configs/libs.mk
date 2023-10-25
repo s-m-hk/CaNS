@@ -20,13 +20,6 @@ endif
 #override LIBS += -L$(NVHPC_ROOT)/math_libs/lib64
 #endif
 
-ifeq ($(strip $(HDF5)),1)
-ifeq ($(strip $(GPU)),1)
-override INCS += -I/lscratch/smhk2/Software/HDF5_NV/include
-override LIBS += -L/lscratch/smhk2/Software/HDF5_NV/lib -lhdf5 -lhdf5_fortran
-endif
-endif
-
 ifneq ($(strip $(GPU)),1)
 override LIBS += -lfftw3
 
