@@ -112,6 +112,9 @@ program cans
   use mod_lag_part       , only: initLPP,SeedParticles,boundlpp,lppsweeps,ComputeSubDerivativeVel,outLPP, &
                                  StorePartOld,AveragePartSol
 #endif
+#if defined(_USE_HDF5)
+  use hdf5
+#endif
   use omp_lib
   implicit none
   integer , dimension(3) :: lo,hi,n,n_x_fft,n_y_fft,lo_z,hi_z,n_z
@@ -209,6 +212,9 @@ program cans
   !
   call MPI_INIT(ierr)
   call MPI_COMM_RANK(MPI_COMM_WORLD,myid,ierr)
+#if defined(_USE_HDF5)
+  call h5open_f(ierr)
+#endif
   !
   ! read parameter file
   !
@@ -231,7 +237,9 @@ program cans
   nh_s = 1
 #endif
   nh_b = 6
+  !
   ! time-integration sub-steps
+  !
   if(    time_scheme.eq.'ab2') then
     tstep = 1
   elseif(time_scheme.eq.'rk3') then
@@ -498,6 +506,11 @@ allocate(duconv(n(1),n(2),n(3)), &
     time = 0.0_rp
 #if defined(_TIMEAVG)
     avgcounter = 0
+    if(myid == 0) then
+     open (88, file=trim(datadir)//'counter.out',status='new',action='write')
+     write(88,'(1I9.8)') avgcounter
+     close(88)
+    endif
 #endif
     !$acc update self(zc,dzc,dzf)
     call initflow(inivel,bcvel,ng,lo,l,dl,zc,zf,dzc,dzf,visc, &
@@ -541,7 +554,7 @@ allocate(duconv(n(1),n(2),n(3)), &
     if(reset_time) then
      istep = 0
      time = 0.0_rp
-    endif
+    end if
     if(myid == 0) print*, '*** Checkpoint loaded at time = ', time, 'time step = ', istep, '. ***'
   end if
 #if defined(_IBM)
@@ -565,10 +578,12 @@ allocate(duconv(n(1),n(2),n(3)), &
   ! output solid volume fractions
   !
   !$acc update self(psi,psi_u,psi_v,psi_w)
-  call out1d(trim(datadir)//'psi.out'  ,ng,lo,hi,3,l,dl,zc_g,dzf,psi  )
-  call out1d(trim(datadir)//'psi_u.out',ng,lo,hi,3,l,dl,zc_g,dzf,psi_u)
-  call out1d(trim(datadir)//'psi_v.out',ng,lo,hi,3,l,dl,zc_g,dzf,psi_v)
-  call out1d(trim(datadir)//'psi_w.out',ng,lo,hi,3,l,dl,zf_g,dzc,psi_w)
+  if(istep == 0) then
+   call out1d(trim(datadir)//'psi.out'  ,ng,lo,hi,3,l,dl,zc_g,dzf,psi  )
+   call out1d(trim(datadir)//'psi_u.out',ng,lo,hi,3,l,dl,zc_g,dzf,psi_u)
+   call out1d(trim(datadir)//'psi_v.out',ng,lo,hi,3,l,dl,zc_g,dzf,psi_v)
+   call out1d(trim(datadir)//'psi_w.out',ng,lo,hi,3,l,dl,zf_g,dzc,psi_w)
+  end if
   if(myid == 0) print*, '*** IBM Initialized ***'
 #endif
   !$acc enter data copyin(u,v,w,p) create(pp)
@@ -638,44 +653,50 @@ allocate(duconv(n(1),n(2),n(3)), &
 #if defined(_HEAT_TRANSFER)
   !$acc update self(s)
 #endif
-  include 'out1d.h90'
-  include 'out2d.h90'
-  call write_visu_3d(trim(datadir),'vex','vex_fld_'//fldnum//'.bin','log_visu_3d.out','Velocity_X', &
-                    (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                    u(1:n(1),1:n(2),1:n(3)),.true.)
-  call write_visu_3d(trim(datadir),'vey','vey_fld_'//fldnum//'.bin','log_visu_3d.out','Velocity_Y', &
-                    (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                    v(1:n(1),1:n(2),1:n(3)),.true.)
-  call write_visu_3d(trim(datadir),'vez','vez_fld_'//fldnum//'.bin','log_visu_3d.out','Velocity_Z', &
-                    (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                    w(1:n(1),1:n(2),1:n(3)),.true.)
-  call write_visu_3d(trim(datadir),'pre','pre_fld_'//fldnum//'.bin','log_visu_3d.out','Pressure_P', &
-                    (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                    p(1:n(1),1:n(2),1:n(3)),.true.)
+  if(istep == 0) then
+   include 'out1d.h90'
+   include 'out2d.h90'
+   call write_visu_3d(trim(datadir),'vex','vex_fld_'//fldnum//'.bin','log_visu_3d.out','Velocity_X', &
+                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
+                      u(1:n(1),1:n(2),1:n(3)),.true.)
+   call write_visu_3d(trim(datadir),'vey','vey_fld_'//fldnum//'.bin','log_visu_3d.out','Velocity_Y', &
+                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
+                      v(1:n(1),1:n(2),1:n(3)),.true.)
+   call write_visu_3d(trim(datadir),'vez','vez_fld_'//fldnum//'.bin','log_visu_3d.out','Velocity_Z', &
+                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
+                      w(1:n(1),1:n(2),1:n(3)),.true.)
+   call write_visu_3d(trim(datadir),'pre','pre_fld_'//fldnum//'.bin','log_visu_3d.out','Pressure_P', &
+                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
+                      p(1:n(1),1:n(2),1:n(3)),.true.)
 #if defined(_HEAT_TRANSFER)
-  call write_visu_3d(trim(datadir),'tmp','tmp_fld_'//fldnum//'.bin','log_visu_3d.out','Temperature_T', &
-                    (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                    s(1:n(1),1:n(2),1:n(3)),.true.)
+   call write_visu_3d(trim(datadir),'tmp','tmp_fld_'//fldnum//'.bin','log_visu_3d.out','Temperature_T', &
+                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
+                      s(1:n(1),1:n(2),1:n(3)),.true.)
 #endif
+  end if
 #if defined(_IBM)
   !$acc update self(psi,psi_u,psi_v,psi_w)
-  call write_visu_3d(trim(datadir),'psis','psis_fld_'//fldnum//'.bin','log_visu_3d.out','Solid_Psi_s', &
-                     (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                     psi(1:n(1),1:n(2),1:n(3)),.false.)
-  call write_visu_3d(trim(datadir),'psiu','psiu_fld_'//fldnum//'.bin','log_visu_3d.out','Solid_Psi_u', &
-                     (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                     psi_u(1:n(1),1:n(2),1:n(3)),.false.)
-  call write_visu_3d(trim(datadir),'psiv','psiv_fld_'//fldnum//'.bin','log_visu_3d.out','Solid_Psi_v', &
-                     (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                     psi_v(1:n(1),1:n(2),1:n(3)),.false.)
-  call write_visu_3d(trim(datadir),'psiw','psiw_fld_'//fldnum//'.bin','log_visu_3d.out','Solid_Psi_w', &
-                     (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                     psi_w(1:n(1),1:n(2),1:n(3)),.false.)
+  if(istep == 0) then
+   call write_visu_3d(trim(datadir),'psis','psis_fld_'//fldnum//'.bin','log_visu_3d.out','Solid_Psi_s', &
+                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
+                      psi(1:n(1),1:n(2),1:n(3)),.false.)
+   call write_visu_3d(trim(datadir),'psiu','psiu_fld_'//fldnum//'.bin','log_visu_3d.out','Solid_Psi_u', &
+                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
+                      psi_u(1:n(1),1:n(2),1:n(3)),.false.)
+   call write_visu_3d(trim(datadir),'psiv','psiv_fld_'//fldnum//'.bin','log_visu_3d.out','Solid_Psi_v', &
+                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
+                      psi_v(1:n(1),1:n(2),1:n(3)),.false.)
+   call write_visu_3d(trim(datadir),'psiw','psiw_fld_'//fldnum//'.bin','log_visu_3d.out','Solid_Psi_w', &
+                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
+                      psi_w(1:n(1),1:n(2),1:n(3)),.false.)
+  end if
 #if defined(_HEAT_TRANSFER)
   !$acc update self(al)
-  call write_visu_3d(trim(datadir),'cond','cond_fld_'//fldnum//'.bin','log_visu_3d.out','Conductivity', &
-                     (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
-                     al(1:n(1),1:n(2),1:n(3)),.false.)
+  if(istep == 0) then
+   call write_visu_3d(trim(datadir),'cond','cond_fld_'//fldnum//'.bin','log_visu_3d.out','Conductivity', &
+                      (/1,1,1/),(/ng(1),ng(2),ng(3)/),(/1,1,1/),time,istep, &
+                      al(1:n(1),1:n(2),1:n(3)),.false.)
+  end if
 #endif
 #endif
   !
@@ -749,14 +770,14 @@ allocate(duconv(n(1),n(2),n(3)), &
               f)
 #if defined(_IMPDIFF)
 #if defined(_HEAT_TRANSFER)
-      !$OMP PARALLEL WORKSHARE
       !$acc kernels present(rhsbx,rhsby,rhsbz,rhsbs) async(1)
+      !$OMP PARALLEL WORKSHARE
       alpha = -0.5_rp*max(alph_f,alph_s)*dtrk
       rhsbx(:,:,0:1) = rhsbs%x(:,:,0:1)*alpha
       rhsby(:,:,0:1) = rhsbs%y(:,:,0:1)*alpha
       rhsbz(:,:,0:1) = rhsbs%z(:,:,0:1)*alpha
-      !$acc end kernels
       !$OMP END PARALLEL WORKSHARE
+      !$acc end kernels
       call updt_rhs_b(['c','c','c'],cbctmp,n,is_bound,rhsbx,rhsby,rhsbz,s)
       !$acc kernels default(present) async(1)
       !$OMP PARALLEL WORKSHARE
@@ -1077,9 +1098,12 @@ allocate(duconv(n(1),n(2),n(3)), &
   call fftend(arrplanu)
   call fftend(arrplanv)
   call fftend(arrplanw)
+#endif
 #if defined(_HEAT_TRANSFER)
   call fftend(arrplans)
 #endif
+#if defined(_USE_HDF5)
+  call h5close_f(ierr)
 #endif
   if(myid == 0.and.(.not.kill)) print*, '*** Finished ***'
   call decomp_2d_finalize

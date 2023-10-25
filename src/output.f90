@@ -182,7 +182,7 @@ module mod_output
        ng(:) = [nx_global,ny_global,islice]
       end select
       !
-      call io_field_hdf5('w',fname,varname,ng,[1,1,1],lo,hi,p)
+      call io_field_hdf5('w',fname,varname,ng,[0,0,0],lo,hi,p)
     end block
 #else
     select case(inorm)
@@ -250,7 +250,7 @@ module mod_output
       if(any(nskip /= 1) .and. myid == 0) &
         print*, 'Warning: `nskip` should be `[1,1,1]` if `io_field()` is used to output 3D field data'
 #if defined(_USE_HDF5)
-      call io_field_hdf5('w',fname,varname,ng,[1,1,1],lo,hi,p)
+      call io_field_hdf5('w',fname,varname,ng,[0,0,0],lo,hi,p)
 #else
       call io_field('w',fh,ng,[0,0,0],lo,hi,disp,p)
 #endif
