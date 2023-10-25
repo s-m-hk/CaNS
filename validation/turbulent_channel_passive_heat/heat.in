@@ -1,0 +1,12 @@
+zer                        ! itmp             (initial condition)
+0.                         ! tg0              (initial temperature)
+0.71                       ! Pr               (Prandtl number)
+1.                         ! dr               (diffusivity ratio of solid to fluid)
+P P  P P  D D              ! cbctmp(0:1,1:3)  [T BC type]
+0. 0. 0. 0. 0. 0.          ! bctmp(0:1,1:3)   [T BC value]
+323. 0.1                   ! tmp0, beta0      (ref. temp., heat expan. coeff.)
+0.                         ! solidtemp        (temperature of solids)
+0.                         ! ssource          (source term)
+F                          ! is_forced(4)     (impose bulk temperature)
+0.                         ! tmpf             (bulk temperature)
+F                          ! is_cmpt_wallflux (calculate and export heat flux at domain boundaries)
