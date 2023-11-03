@@ -24,7 +24,7 @@ module mod_forcing
     real(rp), intent(in   ), dimension(0:) :: dzc,dzf
     real(rp), intent(in   ), dimension(0:,0:,0:) :: psi_u,psi_v,psi_w
     real(rp), intent(inout), dimension(0:,0:,0:) :: u,v,w
-    real(rp), intent(out  ), dimension(0:,0:,0:) :: fx,fy,fz
+    real(rp), intent(inout), dimension(0:,0:,0:) :: fx,fy,fz
     real(rp), intent(out  ), dimension(4) :: fibm
     real(rp) :: psix,psiy,psiz,fxtot,fytot,fztot,dx,dy
     integer :: i,j,k,nx,ny,nz

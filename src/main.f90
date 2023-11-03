@@ -325,9 +325,9 @@ program cans
            psi_w(0:n(1)+1,0:n(2)+1,0:n(3)+1), &
            psi(0:n(1)+1,0:n(2)+1,0:n(3)+1),   &
            marker(0:n(1)+1,0:n(2)+1,0:n(3)+1))
-  allocate(fx(0:n(1)+1,0:n(2)+1,0:n(3)+1), &
-           fy(0:n(1)+1,0:n(2)+1,0:n(3)+1), &
-           fz(0:n(1)+1,0:n(2)+1,0:n(3)+1))
+  allocate(fx(1:n(1),1:n(2),1:n(3)), &
+           fy(1:n(1),1:n(2),1:n(3)), &
+           fz(1:n(1),1:n(2),1:n(3)))
 #if defined(_IBM_BC)
   allocate(    psi_u(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
                psi_v(-5:n(1)+6,-5:n(2)+6,-5:n(3)+6), &
@@ -357,15 +357,21 @@ program cans
      surf_z(:,:) = 0.0_rp
      surf_height(:,:) = 0.0_rp
      open(unit=99,file='k.dat',status='old',action='read')
-     read(99,*) ((surf_z(i,j), i=1,ng(1)), j=1,ng(2))
-     close(99)
-     do j=1,n(2)
-        jj=(j+lo(2)-1)
-       do i=1,n(1)
-          ii=(i+lo(1)-1)
-          surf_height(i,j) = surf_z(ii,jj)
-       enddo
+     do j=1,ng(2)
+      do i=1,ng(1)
+       read(99,*) surf_z(i,j)
+      enddo
      enddo
+     close(99)
+     !
+     do j=1,n(2)
+      jj=(j+lo(2)-1)
+      do i=1,n(1)
+       ii=(i+lo(1)-1)
+       surf_height(i,j) = surf_z(ii,jj)
+      enddo
+     enddo
+     !
      deallocate(surf_z)
   endif
   !$acc enter data copyin(surf_height) async
@@ -626,9 +632,13 @@ allocate(duconv(n(1),n(2),n(3)), &
 #endif
 #if defined(_IBM)
   !
-  ! Impose zero velocity in IB regions for initial condition
+  ! Impose zero velocity in solid regions for initial condition
   !
-  !$acc enter data create(fx,fy,fz,fibm)
+  fibm(:) = 0.0_rp
+  fx(:,:,:) = 0.0_rp
+  fy(:,:,:) = 0.0_rp
+  fz(:,:,:) = 0.0_rp
+  !$acc enter data copyin(fx,fy,fz,fibm)
   call ib_force(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fx,fy,fz,fibm)
 #endif
   call bounduvw(cbcvel,n,nh_v,halo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,u,v,w)

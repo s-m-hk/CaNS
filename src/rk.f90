@@ -90,7 +90,7 @@ module mod_rk
     real(rp) :: factor1,factor2,factor12
     real(rp), dimension(3) :: taux,tauy,tauz
     integer :: i,j,k
-    real(rp) :: mean
+    real(rp) :: psix,psiy,psiz,mean
     !
     if(    time_scheme.eq.'ab2') then !1st order Euler used for first time-step
      if(is_first) then
@@ -296,24 +296,30 @@ module mod_rk
                            psi_u,psi_v,psi_w,&
 #endif
                            u,v,w,f)
+    !
+    ! add bulk velocity forcing
+    !
     call bulk_forcing(n,is_forced,f,u,v,w)
 #if defined(_IBM)
+    !
+    ! compute and add IBM forcing
+    !
     call ib_force(n,dl,dzc,dzf,l,psi_u,psi_v,psi_w,u,v,w,fx,fy,fz,fibm)
 #endif
 #if defined(_IMPDIFF)
     !
-    ! compute rhs of helmholtz equation
+    ! compute rhs of Helmholtz equation
     !
     !$acc parallel loop collapse(3) default(present) async(1)
     !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)
     do k=1,n(3)
-      do j=1,n(2)
-        do i=1,n(1)
-          u(i,j,k) = u(i,j,k) - 0.5_rp*factor12*dudtrkd(i,j,k)
-          v(i,j,k) = v(i,j,k) - 0.5_rp*factor12*dvdtrkd(i,j,k)
-          w(i,j,k) = w(i,j,k) - 0.5_rp*factor12*dwdtrkd(i,j,k)
-        end do
+     do j=1,n(2)
+      do i=1,n(1)
+       u(i,j,k) = u(i,j,k) - 0.5_rp*factor12*dudtrkd(i,j,k)
+       v(i,j,k) = v(i,j,k) - 0.5_rp*factor12*dvdtrkd(i,j,k)
+       w(i,j,k) = w(i,j,k) - 0.5_rp*factor12*dwdtrkd(i,j,k)
       end do
+     end do
     end do
 #endif
   end subroutine rk
@@ -474,7 +480,7 @@ module mod_rk
 #endif
 #if defined(_IMPDIFF)
     !
-    ! compute rhs of helmholtz equation
+    ! compute rhs of Helmholtz equation
     !
     !$acc parallel loop collapse(3) default(present) async(1)
     !$OMP PARALLEL DO COLLAPSE(3) DEFAULT(shared)
